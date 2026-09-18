@@ -17,6 +17,7 @@ def provision_shared_infra() -> SharedInfraOutput:
     gemini_model = config.get("geminiModel") or "gemini-3.1-flash-lite"
     gemini_api_key = config.get_secret("geminiApiKey") or os.environ.get("GEMINI_API_KEY") or ""
     jwt_secret = config.get_secret("jwtSecret") or os.environ.get("JWT_SECRET") or "super-secret-sales-intel-jwt-key-2026"
+    logfire_token = config.get_secret("logfireToken") or os.environ.get("LOGFIRE_TOKEN") or ""
 
     prefix = f"{app_name}-{environment}"
     current_region = aws.get_region()
@@ -249,6 +250,7 @@ def provision_shared_infra() -> SharedInfraOutput:
         s3_uri: str,
         g_key: str,
         j_secret: str,
+        lf_token: str,
         u_tbl: str,
         s_tbl: str,
         j_tbl: str,
@@ -271,12 +273,15 @@ def provision_shared_infra() -> SharedInfraOutput:
         }
         if g_key:
             env_map["GEMINI_API_KEY"] = g_key
+        if lf_token:
+            env_map["LOGFIRE_TOKEN"] = lf_token
         return env_map
 
     common_env_vars = pulumi.Output.all(
         database_s3_uri,
         gemini_api_key,
         jwt_secret,
+        logfire_token,
         users_table.name,
         scores_table.name,
         jobs_table.name,
@@ -285,7 +290,7 @@ def provision_shared_infra() -> SharedInfraOutput:
         prompts_table.name,
     ).apply(
         lambda args: _create_env_map(
-            args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8]
+            args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9]
         )
     )
 

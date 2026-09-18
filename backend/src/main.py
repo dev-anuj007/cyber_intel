@@ -58,7 +58,7 @@ app.add_middleware(
 app.add_middleware(UserJourneyMiddleware)
 
 
-if ENVIRONMENT not in {"local", "dev", "development", "test"} and LOGFIRE_TOKEN:
+if LOGFIRE_TOKEN:
     try:
         import logfire
         logfire.instrument_fastapi(app)

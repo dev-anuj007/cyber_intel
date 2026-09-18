@@ -1,7 +1,10 @@
+import os
 import time
+import queue
+import threading
 import traceback
 from contextlib import contextmanager
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Callable
 
 try:
     import logfire
@@ -16,6 +19,48 @@ from src.services.logger.context import get_current_trace_id
 
 _LOGFIRE_INITIALIZED = False
 
+# Dedicated asynchronous background log queue & daemon worker
+_LOG_QUEUE: queue.Queue = queue.Queue(maxsize=10000)
+_WORKER_THREAD: Optional[threading.Thread] = None
+_WORKER_LOCK = threading.Lock()
+
+
+def _async_worker_loop():
+    """Background consumer daemon executing logfire transmissions asynchronously."""
+    while True:
+        try:
+            item = _LOG_QUEUE.get()
+            if item is None:
+                break
+            fn, args, kwargs = item
+            fn(*args, **kwargs)
+            _LOG_QUEUE.task_done()
+        except Exception:
+            pass
+
+
+def _ensure_worker_running():
+    global _WORKER_THREAD
+    if _WORKER_THREAD is None or not _WORKER_THREAD.is_alive():
+        with _WORKER_LOCK:
+            if _WORKER_THREAD is None or not _WORKER_THREAD.is_alive():
+                t = threading.Thread(
+                    target=_async_worker_loop,
+                    name="LogfireAsyncWorker",
+                    daemon=True,
+                )
+                t.start()
+                _WORKER_THREAD = t
+
+
+def _dispatch_async(fn: Callable, *args, **kwargs):
+    """Enqueue logging task to background worker for zero-overhead execution."""
+    _ensure_worker_running()
+    try:
+        _LOG_QUEUE.put_nowait((fn, args, kwargs))
+    except queue.Full:
+        pass
+
 
 def init_logfire_client(token: Optional[str] = None, service_name: Optional[str] = None) -> bool:
     global _LOGFIRE_INITIALIZED
@@ -23,7 +68,7 @@ def init_logfire_client(token: Optional[str] = None, service_name: Optional[str]
     if _LOGFIRE_INITIALIZED:
         return True
 
-    if not _LOGFIRE_AVAILABLE:
+    if not _LOGFIRE_AVAILABLE or not logfire:
         return False
 
     auth_token = token or LOGFIRE_TOKEN
@@ -45,6 +90,7 @@ def init_logfire_client(token: Optional[str] = None, service_name: Optional[str]
                 inspect_arguments=False,
             )
         _LOGFIRE_INITIALIZED = True
+        _ensure_worker_running()
         return True
     except Exception as e:
         print(f"[LogfireLogger] Warning: Failed to initialize Logfire: {e}")
@@ -68,43 +114,43 @@ class LogfireLogger(BaseLogger):
 
     def debug(self, msg: str, *args, **kwargs) -> None:
         attrs = self._prepare_attributes(**kwargs)
-        if _LOGFIRE_AVAILABLE and logfire:
-            logfire.debug(f"[{self.name}] {msg}", **attrs)
+        if _LOGFIRE_AVAILABLE and logfire and _LOGFIRE_INITIALIZED:
+            _dispatch_async(logfire.debug, f"[{self.name}] {msg}", **attrs)
         else:
             print(self.format_message("DEBUG", msg, **attrs))
 
     def info(self, msg: str, *args, **kwargs) -> None:
         attrs = self._prepare_attributes(**kwargs)
-        if _LOGFIRE_AVAILABLE and logfire:
-            logfire.info(f"[{self.name}] {msg}", **attrs)
+        if _LOGFIRE_AVAILABLE and logfire and _LOGFIRE_INITIALIZED:
+            _dispatch_async(logfire.info, f"[{self.name}] {msg}", **attrs)
         else:
             print(self.format_message("INFO", msg, **attrs))
 
     def warning(self, msg: str, *args, **kwargs) -> None:
         attrs = self._prepare_attributes(**kwargs)
-        if _LOGFIRE_AVAILABLE and logfire:
-            logfire.warn(f"[{self.name}] {msg}", **attrs)
+        if _LOGFIRE_AVAILABLE and logfire and _LOGFIRE_INITIALIZED:
+            _dispatch_async(logfire.warn, f"[{self.name}] {msg}", **attrs)
         else:
             print(self.format_message("WARNING", msg, **attrs))
 
     def error(self, msg: str, *args, **kwargs) -> None:
         attrs = self._prepare_attributes(**kwargs)
-        if _LOGFIRE_AVAILABLE and logfire:
-            logfire.error(f"[{self.name}] {msg}", **attrs)
+        if _LOGFIRE_AVAILABLE and logfire and _LOGFIRE_INITIALIZED:
+            _dispatch_async(logfire.error, f"[{self.name}] {msg}", **attrs)
         else:
             print(self.format_message("ERROR", msg, **attrs))
 
     def critical(self, msg: str, *args, **kwargs) -> None:
         attrs = self._prepare_attributes(**kwargs)
-        if _LOGFIRE_AVAILABLE and logfire:
-            logfire.fatal(f"[{self.name}] {msg}", **attrs)
+        if _LOGFIRE_AVAILABLE and logfire and _LOGFIRE_INITIALIZED:
+            _dispatch_async(logfire.fatal, f"[{self.name}] {msg}", **attrs)
         else:
             print(self.format_message("CRITICAL", msg, **attrs))
 
     def exception(self, msg: str, *args, **kwargs) -> None:
         attrs = self._prepare_attributes(**kwargs)
-        if _LOGFIRE_AVAILABLE and logfire:
-            logfire.exception(f"[{self.name}] {msg}", **attrs)
+        if _LOGFIRE_AVAILABLE and logfire and _LOGFIRE_INITIALIZED:
+            _dispatch_async(logfire.exception, f"[{self.name}] {msg}", **attrs)
         else:
             attrs["traceback"] = traceback.format_exc()
             print(self.format_message("EXCEPTION", msg, **attrs))
@@ -113,21 +159,21 @@ class LogfireLogger(BaseLogger):
     def span(self, name: str, **kwargs):
         attrs = self._prepare_attributes(**kwargs)
         span_title = f"{self.name}.{name}"
+        start_time = time.perf_counter()
         
-        if _LOGFIRE_AVAILABLE and logfire:
-            with logfire.span(span_title, **attrs):
-                yield
-        else:
-            start_time = time.perf_counter()
-            self.info(f"==> [SPAN START] {span_title}", **attrs)
-            try:
-                yield
-                dur = (time.perf_counter() - start_time) * 1000
-                self.info(f"<== [SPAN END] {span_title} ({dur:.2f}ms)", duration_ms=round(dur, 2), **attrs)
-            except Exception as e:
-                dur = (time.perf_counter() - start_time) * 1000
-                self.error(f"<== [SPAN FAILED] {span_title} after {dur:.2f}ms: {e}", duration_ms=round(dur, 2), error=str(e), **attrs)
-                raise
+        try:
+            yield
+            dur = (time.perf_counter() - start_time) * 1000
+            attrs["duration_ms"] = round(dur, 2)
+            if _LOGFIRE_AVAILABLE and logfire and _LOGFIRE_INITIALIZED:
+                _dispatch_async(logfire.info, f"[{span_title}] completed in {dur:.2f}ms", **attrs)
+        except Exception as e:
+            dur = (time.perf_counter() - start_time) * 1000
+            attrs["duration_ms"] = round(dur, 2)
+            attrs["error"] = str(e)
+            if _LOGFIRE_AVAILABLE and logfire and _LOGFIRE_INITIALIZED:
+                _dispatch_async(logfire.error, f"[{span_title}] failed after {dur:.2f}ms: {e}", **attrs)
+            raise
 
     def bind(self, **kwargs) -> "LogfireLogger":
         merged = self.extra.copy()

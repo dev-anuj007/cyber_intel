@@ -230,17 +230,36 @@ class DynamoJobsRepository(IJobsRepository):
         return 0
 
     def _map_item(self, item: Dict[str, Any]) -> Dict[str, Any]:
+        current = int(item.get("progress_current", 0) or 0)
+        total = max(1, int(item.get("progress_total", 1) or 1))
+        status = item.get("status", "queued")
+        progress_percent = min(100, int((current / total) * 100)) if status != "completed" else 100
+
+        duration_ms = None
+        if item.get("started_at") and item.get("completed_at"):
+            try:
+                t0 = datetime.fromisoformat(str(item["started_at"]).replace("Z", "+00:00"))
+                t1 = datetime.fromisoformat(str(item["completed_at"]).replace("Z", "+00:00"))
+                duration_ms = int((t1 - t0).total_seconds() * 1000)
+            except Exception:
+                pass
+
+        user_id = item.get("user_id")
+        if user_id is not None and str(user_id).isdigit():
+            user_id = int(user_id)
+
         return {
             "id": item.get("job_id"),
             "job_id": item.get("job_id"),
             "job_type": item.get("job_type"),
             "title": item.get("title"),
-            "user_id": item.get("user_id"),
-            "status": item.get("status"),
-            "progress_current": item.get("progress_current", 0),
-            "progress_total": item.get("progress_total", 1),
-            "retry_count": item.get("retry_count", 0),
-            "max_retries": item.get("max_retries", 3),
+            "user_id": user_id,
+            "status": status,
+            "progress_current": current,
+            "progress_total": total,
+            "progress_percent": progress_percent,
+            "retry_count": int(item.get("retry_count", 0) or 0),
+            "max_retries": int(item.get("max_retries", 3) or 3),
             "payload": item.get("payload", {}),
             "results": item.get("results"),
             "metadata": item.get("metadata", {}),
@@ -249,4 +268,5 @@ class DynamoJobsRepository(IJobsRepository):
             "created_at": item.get("created_at"),
             "started_at": item.get("started_at"),
             "completed_at": item.get("completed_at"),
+            "duration_ms": duration_ms,
         }

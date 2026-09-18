@@ -24,16 +24,15 @@ class LoggerService:
         if name in self._instances:
             return self._instances[name]
 
-        if self.is_local:
+        if LOGFIRE_TOKEN:
+            logger = LogfireLogger(name=name)
+        elif self.is_local:
             logger = ConsoleLogger(name=name)
         else:
-            if LOGFIRE_TOKEN:
-                logger = LogfireLogger(name=name)
-            else:
-                logger = ConsoleLogger(name=name)
-                logger.warning(
-                    f"Deployed mode '{self._env}' detected but LOGFIRE_TOKEN is missing. Defaulting to ConsoleLogger."
-                )
+            logger = ConsoleLogger(name=name)
+            logger.warning(
+                f"Deployed mode '{self._env}' detected but LOGFIRE_TOKEN is missing. Defaulting to ConsoleLogger."
+            )
 
         self._instances[name] = logger
         return logger

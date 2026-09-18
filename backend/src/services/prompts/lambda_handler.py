@@ -3,6 +3,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from src.services.prompts.api import router as prompts_router
 
+from src.services.logger import get_logger, UserJourneyMiddleware
+from src.core.config import LOGFIRE_TOKEN
+
 app = FastAPI(
     title="Prompt Registry Microservice",
     description="Dedicated serverless microservice for managing versioned LLM prompt templates and registries.",
@@ -16,6 +19,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(UserJourneyMiddleware)
+
+if LOGFIRE_TOKEN:
+    try:
+        import logfire
+        logfire.instrument_fastapi(app)
+    except Exception:
+        pass
 
 app.include_router(prompts_router)
 

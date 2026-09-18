@@ -64,6 +64,7 @@ def provision_service_infra(ctx: ServiceInfraContext) -> ServiceInfraOutput:
             api_id=ctx.http_api_id,
             route_key=r_key,
             target=integration.id.apply(lambda i_id: f"integrations/{i_id}"),
+            opts=pulumi.ResourceOptions(delete_before_replace=True),
         )
         routes.append(route)
 

@@ -45,6 +45,9 @@ fi
 if [ -n "${JWT_SECRET:-}" ]; then
     pulumi config set --secret jwtSecret "${JWT_SECRET}"
 fi
+if [ -n "${LOGFIRE_TOKEN:-}" ]; then
+    pulumi config set --secret logfireToken "${LOGFIRE_TOKEN}"
+fi
 
 # 3. Build MkDocs
 echo -e "\n[3/7] Building MkDocs Technical Documentation..."
@@ -97,6 +100,13 @@ DB_BUCKET="$(pulumi stack output database_bucket_name | tr -d '[:space:]')"
 API_URL="$(pulumi stack output api_gateway_url | tr -d '[:space:]')"
 FRONTEND_BUCKET="$(pulumi stack output frontend_bucket_name | tr -d '[:space:]')"
 FRONTEND_URL="$(pulumi stack output frontend_website_url | tr -d '[:space:]')"
+
+echo "  -> Refreshing Lambda functions to latest container images..."
+for svc in "${SERVICES[@]}"; do
+    fn_name="sales-intel-${STACK}-${svc}"
+    img_uri="${ECR_BASE}/sales-intel-${STACK}-${svc}:latest"
+    aws lambda update-function-code --function-name "${fn_name}" --image-uri "${img_uri}" --region "${AWS_REGION}" --output json >/dev/null 2>&1 || true
+done
 
 # 6. Upload DB
 echo -e "\n[6/7] Uploading accounts.db to S3..."

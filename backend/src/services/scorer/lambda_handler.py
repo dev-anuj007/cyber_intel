@@ -11,7 +11,8 @@ from src.services.scorer.api import router as scorer_router
 from src.services.scorer import default_scorer_service
 from src.services.accounts import default_accounts_service
 from src.core.error_handlers import register_error_handlers
-from src.services.logger import get_logger
+from src.services.logger import get_logger, UserJourneyMiddleware
+from src.core.config import LOGFIRE_TOKEN
 
 logger = get_logger("services.scorer.lambda")
 
@@ -30,6 +31,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(UserJourneyMiddleware)
+
+if LOGFIRE_TOKEN:
+    try:
+        import logfire
+        logfire.instrument_fastapi(app)
+    except Exception:
+        pass
 
 default_scorer_service.set_accounts_service(default_accounts_service)
 app.include_router(scorer_router)

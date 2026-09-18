@@ -50,7 +50,7 @@ class JobDetail(BaseModel):
     job_id: str
     job_type: str
     title: str
-    user_id: Optional[int] = None
+    user_id: Optional[Any] = None
     status: JobStatus
     progress_current: int
     progress_total: int

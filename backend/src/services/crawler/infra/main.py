@@ -52,6 +52,11 @@ def provision_service_infra(ctx: ServiceInfraContext) -> ServiceInfraOutput:
         "ANY /api/crawler/{proxy+}",
         "POST /api/crawler/crawl",
         "GET /api/crawler/domain/{domain}",
+        "ANY /api/crawler",
+        "GET /api/crawler/scanners",
+        "GET /api/crawler/jobs",
+        "POST /api/crawler/jobs",
+        "GET /api/crawler/jobs/{job_id}",
     ]
 
     routes = []
@@ -62,6 +67,7 @@ def provision_service_infra(ctx: ServiceInfraContext) -> ServiceInfraOutput:
             api_id=ctx.http_api_id,
             route_key=r_key,
             target=integration.id.apply(lambda i_id: f"integrations/{i_id}"),
+            opts=pulumi.ResourceOptions(delete_before_replace=True),
         )
         routes.append(route)
 

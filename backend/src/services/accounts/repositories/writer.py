@@ -11,18 +11,20 @@ class AccountWriter(IAccountWriter):
         cursor = conn.cursor()
         signal_count = len(account.signals)
 
-        cursor.execute(
-            """
-            INSERT INTO accounts (account_key, signal_count, priority_tier) 
-            VALUES (?, ?, ?)
-            ON CONFLICT(account_key) DO UPDATE SET 
-                signal_count = excluded.signal_count, 
-                priority_tier = excluded.priority_tier
-            """,
-            (account.account_key, signal_count, priority_tier),
-        )
         cursor.execute("SELECT id FROM accounts WHERE account_key = ?", (account.account_key,))
-        account_id = cursor.fetchone()[0]
+        row = cursor.fetchone()
+        if row:
+            account_id = row[0]
+            cursor.execute(
+                "UPDATE accounts SET signal_count = ?, priority_tier = ? WHERE id = ?",
+                (signal_count, priority_tier, account_id),
+            )
+        else:
+            cursor.execute(
+                "INSERT INTO accounts (account_key, signal_count, priority_tier) VALUES (?, ?, ?)",
+                (account.account_key, signal_count, priority_tier),
+            )
+            account_id = cursor.lastrowid
 
         self.clear_account_entities_by_id(conn, account_id)
 

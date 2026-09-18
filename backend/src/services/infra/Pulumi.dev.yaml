@@ -4,5 +4,7 @@ config:
   sales-intel-infra:environment: dev
   sales-intel-infra:geminiModel: gemini-3.1-flash-lite
   sales-intel-infra:geminiApiKey:
-    secure: v1:ZL46EtX54ZUYrDBV:8qXn3eIiqOoahoQAOySRRA6lkwqN1PPNdVUETIEf8ZCSjiSMmlSoNPuQeJkV3Dg1J9v4a4RY06nOesePEhC+H84QBnlu
+    secure: v1:5Bh/6kJURSbF7JHv:KT606zKgvakD9D+x0AycUY9CS7phZ1B78L19/n0l/xxndm53neNa+8qOPMEb1Dy/4l4aD0XwIMDqLA4z+fk+b/AQF4wm
+  sales-intel-infra:logfireToken:
+    secure: v1:S4LuRqWNeDkecXqZ:Ni2GdkjALOj4uaajWsHOXHQD++M3upOdFX2S3ZEe2o4+fRm4L+qpNbzeN2GbeFi7rVh/MB1bXkl8PsB+JLLh+nBgkt9M0Ik=
 encryptionsalt: v1:nIrUaEpw+Z4=:v1:xm7JeQb3duOAbzcU:N+fCd3EzfLHh2gG0RRptPKuoNZp4xQ==

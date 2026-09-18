@@ -10,7 +10,8 @@ from mangum import Mangum
 from src.services.accounts.api import router as accounts_router
 from src.services.accounts import default_accounts_service
 from src.core.error_handlers import register_error_handlers
-from src.services.logger import get_logger
+from src.services.logger import get_logger, UserJourneyMiddleware
+from src.core.config import LOGFIRE_TOKEN
 
 logger = get_logger("services.accounts.lambda")
 
@@ -29,6 +30,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(UserJourneyMiddleware)
+
+if LOGFIRE_TOKEN:
+    try:
+        import logfire
+        logfire.instrument_fastapi(app)
+    except Exception:
+        pass
 
 app.include_router(accounts_router)
 

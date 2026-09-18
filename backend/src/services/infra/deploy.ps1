@@ -67,6 +67,9 @@ try {
     if ($env:JWT_SECRET) {
         & pulumi config set --secret jwtSecret $env:JWT_SECRET
     }
+    if ($env:LOGFIRE_TOKEN) {
+        & pulumi config set --secret logfireToken $env:LOGFIRE_TOKEN
+    }
 } finally {
     Pop-Location
 }
@@ -130,6 +133,7 @@ try {
     $origPref = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     & pulumi cancel --yes 2>$null
+    & pulumi refresh --yes --skip-preview --clear-pending-creates
     & pulumi refresh --yes --skip-preview
     & pulumi up --yes
     $lastCode = $LASTEXITCODE
@@ -142,6 +146,17 @@ try {
     $ApiGatewayUrl = (pulumi stack output api_gateway_url).Trim()
     $FrontendBucket = (pulumi stack output frontend_bucket_name).Trim()
     $FrontendUrl = (pulumi stack output frontend_website_url).Trim()
+
+    Write-Host "`n  -> Refreshing Lambda functions to use latest container images..." -ForegroundColor Cyan
+    foreach ($svc in $microservices) {
+        $fnName = "sales-intel-$Stack-$($svc.Name)"
+        $imgUri = "$ecrBase/sales-intel-$Stack-$($svc.Name):latest"
+        try {
+            aws lambda update-function-code --function-name $fnName --image-uri $imgUri --region $AwsRegion --output json 2>$null | Out-Null
+        } catch {
+            Write-Host "    (Warning: Could not update $fnName code: $($_.Exception.Message))" -ForegroundColor DarkYellow
+        }
+    }
 } finally {
     Pop-Location
 }
