@@ -1,0 +1,257 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 660" width="100%" height="100%" style="background:#ffffff; border-radius:12px; font-family:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+  <defs>
+    <!-- Gradients -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#f8fafc"/>
+    </linearGradient>
+    <linearGradient id="headerGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+    <linearGradient id="lambdaGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF9900"/>
+      <stop offset="100%" stop-color="#E87C00"/>
+    </linearGradient>
+    <linearGradient id="apigwGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#E7157B"/>
+      <stop offset="100%" stop-color="#B00855"/>
+    </linearGradient>
+    <linearGradient id="s3Grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7AA116"/>
+      <stop offset="100%" stop-color="#5B7E0F"/>
+    </linearGradient>
+    <linearGradient id="ecrGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF4F8B"/>
+      <stop offset="100%" stop-color="#D81B60"/>
+    </linearGradient>
+    <linearGradient id="geminiGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4F46E5"/>
+      <stop offset="50%" stop-color="#7C3AED"/>
+      <stop offset="100%" stop-color="#2563EB"/>
+    </linearGradient>
+    
+    <!-- Drop Shadows -->
+    <filter id="cardShadow" x="-10%" y="-10%" width="120%" height="125%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#0f172a" flood-opacity="0.06"/>
+    </filter>
+    <filter id="iconShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000000" flood-opacity="0.15"/>
+    </filter>
+
+    <!-- Markers -->
+    <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#3b82f6"/>
+    </marker>
+    <marker id="arrowGreen" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#7AA116"/>
+    </marker>
+    <marker id="arrowPurple" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#8b5cf6"/>
+    </marker>
+  </defs>
+
+  <!-- Background Base -->
+  <rect width="1200" height="660" rx="12" fill="url(#bgGrad)" stroke="#e2e8f0" stroke-width="1.5"/>
+
+  <!-- Top Title Banner -->
+  <rect x="24" y="20" width="1152" height="48" rx="8" fill="url(#headerGrad)"/>
+  <text x="44" y="49" fill="#ffffff" font-size="15" font-weight="700" letter-spacing="0.5">AWS REFERENCE ARCHITECTURE</text>
+  <text x="310" y="49" fill="#94a3b8" font-size="13" font-weight="500">|</text>
+  <text x="325" y="49" fill="#38bdf8" font-size="13" font-weight="600">Sales Intelligence Platform — Serverless Microservices Topology</text>
+  <rect x="1050" y="32" width="110" height="24" rx="12" fill="#1e3a8a"/>
+  <text x="1105" y="48" fill="#93c5fd" font-size="11" font-weight="700" text-anchor="middle">ap-south-1</text>
+
+  <!-- ==================== TIER 1: CLIENT & INGRESS LAYER ==================== -->
+  <rect x="24" y="85" width="1152" height="110" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="1" filter="url(#cardShadow)"/>
+  <text x="40" y="108" fill="#475569" font-size="11" font-weight="700" letter-spacing="0.5">INGRESS &amp; PRESENTATION TIER</text>
+
+  <!-- Client Box -->
+  <g transform="translate(50, 118)">
+    <rect width="140" height="62" rx="8" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+    <!-- Laptop/Browser Icon -->
+    <rect x="14" y="14" width="34" height="24" rx="3" fill="#3b82f6" filter="url(#iconShadow)"/>
+    <rect x="17" y="17" width="28" height="16" rx="1" fill="#ffffff"/>
+    <path d="M 10 40 L 52 40" stroke="#64748b" stroke-width="2.5" stroke-linecap="round"/>
+    <text x="56" y="28" fill="#0f172a" font-size="12" font-weight="700">Web Browser</text>
+    <text x="56" y="44" fill="#64748b" font-size="10">Chrome / Firefox</text>
+  </g>
+
+  <!-- S3 Static Website Box -->
+  <g transform="translate(250, 118)">
+    <rect width="250" height="62" rx="8" fill="#f0fdf4" stroke="#86efac" stroke-width="1"/>
+    <!-- S3 Icon -->
+    <rect x="14" y="12" width="38" height="38" rx="8" fill="url(#s3Grad)" filter="url(#iconShadow)"/>
+    <path d="M 23 23 L 33 18 L 43 23 L 33 28 Z M 23 27 L 33 32 L 43 27 M 23 33 L 33 38 L 43 33" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="60" y="28" fill="#0f172a" font-size="12" font-weight="700">Amazon S3 Static Website</text>
+    <text x="60" y="43" fill="#15803d" font-size="10" font-weight="600">React 18 SPA + MkDocs Site</text>
+    <text x="60" y="56" fill="#64748b" font-size="9.5">sales-intel-dev-frontend</text>
+  </g>
+
+  <!-- Amazon API Gateway Box -->
+  <g transform="translate(560, 118)">
+    <rect width="590" height="62" rx="8" fill="#fdf2f8" stroke="#fbcfe8" stroke-width="1"/>
+    <!-- API GW Icon -->
+    <rect x="14" y="12" width="38" height="38" rx="8" fill="url(#apigwGrad)" filter="url(#iconShadow)"/>
+    <path d="M 23 31 L 33 21 L 43 31 M 33 21 L 33 41" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="23" cy="31" r="2.5" fill="#ffffff"/>
+    <circle cx="43" cy="31" r="2.5" fill="#ffffff"/>
+    <circle cx="33" cy="41" r="2.5" fill="#ffffff"/>
+    <text x="62" y="28" fill="#0f172a" font-size="12.5" font-weight="700">Amazon API Gateway (HTTP API v2)</text>
+    <text x="62" y="43" fill="#be185d" font-size="10.5" font-weight="600">Route Orchestration &amp; CORS Engine (3600s Preflight TTL)</text>
+    <text x="62" y="56" fill="#64748b" font-size="9.5">Endpoint: https://9cgorv8occ.execute-api.ap-south-1.amazonaws.com</text>
+  </g>
+
+  <!-- Arrows from Client to S3 and APIGW -->
+  <path d="M 190 149 L 246 149" fill="none" stroke="#7AA116" stroke-width="2" stroke-dasharray="4 3" marker-end="url(#arrowGreen)"/>
+  <text x="218" y="142" fill="#15803d" font-size="9" font-weight="600" text-anchor="middle">GET UI</text>
+
+  <path d="M 140 180 C 140 215, 540 160, 556 150" fill="none" stroke="#3b82f6" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="350" y="202" fill="#2563eb" font-size="9.5" font-weight="700">HTTPS REST API Requests (Bearer JWT)</text>
+
+  <!-- ==================== TIER 2: SERVERLESS COMPUTE LAYER ==================== -->
+  <rect x="24" y="215" width="1152" height="260" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="1" filter="url(#cardShadow)"/>
+  <text x="40" y="238" fill="#475569" font-size="11" font-weight="700" letter-spacing="0.5">SERVERLESS MICROSERVICES TIER (8 DEDICATED ECR CONTAINERS)</text>
+
+  <!-- ECR Badge on Top Right of Tier 2 -->
+  <g transform="translate(930, 226)">
+    <rect width="230" height="24" rx="6" fill="#fff1f2" stroke="#fecdd3" stroke-width="1"/>
+    <rect x="6" y="5" width="14" height="14" rx="3" fill="url(#ecrGrad)"/>
+    <text x="26" y="17" fill="#9f1239" font-size="10" font-weight="700">Amazon ECR (8 Container Repos)</text>
+  </g>
+
+  <!-- 8 Lambda Microservice Cards (2 Rows of 4 Cards) -->
+  
+  <!-- ROW 1 -->
+  <!-- 1. Auth Microservice -->
+  <g transform="translate(45, 255)">
+    <rect width="265" height="95" rx="8" fill="#fffbeb" stroke="#fde68a" stroke-width="1"/>
+    <rect x="12" y="12" width="34" height="34" rx="6" fill="url(#lambdaGrad)" filter="url(#iconShadow)"/>
+    <text x="29" y="34" fill="#ffffff" font-size="18" font-weight="700" text-anchor="middle">λ</text>
+    <text x="54" y="26" fill="#0f172a" font-size="12" font-weight="700">Auth Microservice</text>
+    <text x="54" y="40" fill="#b45309" font-size="9.5" font-weight="600">/api/auth/*</text>
+    <text x="12" y="62" fill="#475569" font-size="9.5">• Salted SHA-256 Auth &amp; HS256 JWT</text>
+    <text x="12" y="75" fill="#475569" font-size="9.5">• Personal Gemini BYOK Key Vault</text>
+    <text x="12" y="88" fill="#64748b" font-size="8.5">sales-intel-dev-auth | 4GB Tmp</text>
+  </g>
+
+  <!-- 2. Accounts Microservice -->
+  <g transform="translate(325, 255)">
+    <rect width="265" height="95" rx="8" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
+    <rect x="12" y="12" width="34" height="34" rx="6" fill="url(#lambdaGrad)" filter="url(#iconShadow)"/>
+    <text x="29" y="34" fill="#ffffff" font-size="18" font-weight="700" text-anchor="middle">λ</text>
+    <text x="54" y="26" fill="#0f172a" font-size="12" font-weight="700">Accounts Microservice</text>
+    <text x="54" y="40" fill="#1d4ed8" font-size="9.5" font-weight="600">/api/accounts/*</text>
+    <text x="12" y="62" fill="#475569" font-size="9.5">• Sub-10ms Indexed Search &amp; Filter</text>
+    <text x="12" y="75" fill="#475569" font-size="9.5">• 372k+ Records, Tiers &amp; CSV Export</text>
+    <text x="12" y="88" fill="#64748b" font-size="8.5">sales-intel-dev-accounts | 4GB Tmp</text>
+  </g>
+
+  <!-- 3. Database Microservice -->
+  <g transform="translate(605, 255)">
+    <rect width="265" height="95" rx="8" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="1"/>
+    <rect x="12" y="12" width="34" height="34" rx="6" fill="url(#lambdaGrad)" filter="url(#iconShadow)"/>
+    <text x="29" y="34" fill="#ffffff" font-size="18" font-weight="700" text-anchor="middle">λ</text>
+    <text x="54" y="26" fill="#0f172a" font-size="12" font-weight="700">Database Microservice</text>
+    <text x="54" y="40" fill="#15803d" font-size="9.5" font-weight="600">/api/database/*</text>
+    <text x="12" y="62" fill="#475569" font-size="9.5">• S3 Direct SQLite Streaming Engine</text>
+    <text x="12" y="75" fill="#475569" font-size="9.5">• Auto-Schema &amp; Table Diagnostics</text>
+    <text x="12" y="88" fill="#64748b" font-size="8.5">sales-intel-dev-database | 4GB Tmp</text>
+  </g>
+
+  <!-- 4. Scorer Microservice -->
+  <g transform="translate(885, 255)">
+    <rect width="265" height="95" rx="8" fill="#faf5ff" stroke="#e9d5ff" stroke-width="1"/>
+    <rect x="12" y="12" width="34" height="34" rx="6" fill="url(#lambdaGrad)" filter="url(#iconShadow)"/>
+    <text x="29" y="34" fill="#ffffff" font-size="18" font-weight="700" text-anchor="middle">λ</text>
+    <text x="54" y="26" fill="#0f172a" font-size="12" font-weight="700">AI Scorer Microservice</text>
+    <text x="54" y="40" fill="#7e22ce" font-size="9.5" font-weight="600">/api/score/*</text>
+    <text x="12" y="62" fill="#475569" font-size="9.5">• Gemini 3.1 Flash-Lite AI Inference</text>
+    <text x="12" y="75" fill="#475569" font-size="9.5">• 4-Tier Risk Score &amp; JSONL Traces</text>
+    <text x="12" y="88" fill="#64748b" font-size="8.5">sales-intel-dev-scorer | 4GB Tmp</text>
+  </g>
+
+  <!-- ROW 2 -->
+  <!-- 5. Crawler Microservice -->
+  <g transform="translate(45, 365)">
+    <rect width="265" height="95" rx="8" fill="#fdf4ff" stroke="#f5d0fe" stroke-width="1"/>
+    <rect x="12" y="12" width="34" height="34" rx="6" fill="url(#lambdaGrad)" filter="url(#iconShadow)"/>
+    <text x="29" y="34" fill="#ffffff" font-size="18" font-weight="700" text-anchor="middle">λ</text>
+    <text x="54" y="26" fill="#0f172a" font-size="12" font-weight="700">Crawler Microservice</text>
+    <text x="54" y="40" fill="#a21caf" font-size="9.5" font-weight="600">/api/crawler/*</text>
+    <text x="12" y="62" fill="#475569" font-size="9.5">• Multi-Thread TCP Port Scanner</text>
+    <text x="12" y="75" fill="#475569" font-size="9.5">• DNS Recon &amp; Security Header Check</text>
+    <text x="12" y="88" fill="#64748b" font-size="8.5">sales-intel-dev-crawler | 4GB Tmp</text>
+  </g>
+
+  <!-- 6. Eval Microservice -->
+  <g transform="translate(325, 365)">
+    <rect width="265" height="95" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
+    <rect x="12" y="12" width="34" height="34" rx="6" fill="url(#lambdaGrad)" filter="url(#iconShadow)"/>
+    <text x="29" y="34" fill="#ffffff" font-size="18" font-weight="700" text-anchor="middle">λ</text>
+    <text x="54" y="26" fill="#0f172a" font-size="12" font-weight="700">Eval Microservice</text>
+    <text x="54" y="40" fill="#475569" font-size="9.5" font-weight="600">/api/eval/*</text>
+    <text x="12" y="62" fill="#475569" font-size="9.5">• 25 Ground-Truth Benchmark Set</text>
+    <text x="12" y="75" fill="#475569" font-size="9.5">• Prompt v1.0 vs v2.0 Scoring Diff</text>
+    <text x="12" y="88" fill="#64748b" font-size="8.5">sales-intel-dev-eval | 4GB Tmp</text>
+  </g>
+
+  <!-- 7. Jobs Microservice -->
+  <g transform="translate(605, 365)">
+    <rect width="265" height="95" rx="8" fill="#fef2f2" stroke="#fecaca" stroke-width="1"/>
+    <rect x="12" y="12" width="34" height="34" rx="6" fill="url(#lambdaGrad)" filter="url(#iconShadow)"/>
+    <text x="29" y="34" fill="#ffffff" font-size="18" font-weight="700" text-anchor="middle">λ</text>
+    <text x="54" y="26" fill="#0f172a" font-size="12" font-weight="700">Jobs Microservice</text>
+    <text x="54" y="40" fill="#b91c1c" font-size="9.5" font-weight="600">/api/jobs/*</text>
+    <text x="12" y="62" fill="#475569" font-size="9.5">• Async Background Worker Engine</text>
+    <text x="12" y="75" fill="#475569" font-size="9.5">• Task Progress &amp; Auto-Recovery</text>
+    <text x="12" y="88" fill="#64748b" font-size="8.5">sales-intel-dev-jobs | 4GB Tmp</text>
+  </g>
+
+  <!-- 8. Gateway Fallback Microservice -->
+  <g transform="translate(885, 365)">
+    <rect width="265" height="95" rx="8" fill="#f0fdfa" stroke="#99f6e4" stroke-width="1"/>
+    <rect x="12" y="12" width="34" height="34" rx="6" fill="url(#lambdaGrad)" filter="url(#iconShadow)"/>
+    <text x="29" y="34" fill="#ffffff" font-size="18" font-weight="700" text-anchor="middle">λ</text>
+    <text x="54" y="26" fill="#0f172a" font-size="12" font-weight="700">Gateway Fallback</text>
+    <text x="54" y="40" fill="#0f766e" font-size="9.5" font-weight="600">/health, $default</text>
+    <text x="12" y="62" fill="#475569" font-size="9.5">• Unified ASGI Catch-all &amp; Proxy</text>
+    <text x="12" y="75" fill="#475569" font-size="9.5">• System-Wide Health Aggregation</text>
+    <text x="12" y="88" fill="#64748b" font-size="8.5">sales-intel-dev-gateway | 4GB Tmp</text>
+  </g>
+
+  <!-- API GW to Lambdas Routing Line -->
+  <path d="M 855 180 L 855 245" fill="none" stroke="#E7157B" stroke-width="2" stroke-dasharray="3 3" marker-end="url(#arrow)"/>
+
+  <!-- ==================== TIER 3: DATA STORAGE & AI INFERENCE LAYER ==================== -->
+  <rect x="24" y="495" width="1152" height="145" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="1" filter="url(#cardShadow)"/>
+  <text x="40" y="518" fill="#475569" font-size="11" font-weight="700" letter-spacing="0.5">STORAGE &amp; EXTERNAL AI FOUNDATION TIER</text>
+
+  <!-- Amazon S3 Database Bucket Card -->
+  <g transform="translate(45, 530)">
+    <rect width="530" height="92" rx="8" fill="#f0fdf4" stroke="#86efac" stroke-width="1.2"/>
+    <rect x="16" y="16" width="60" height="60" rx="10" fill="url(#s3Grad)" filter="url(#iconShadow)"/>
+    <!-- Large S3 Database Icon -->
+    <path d="M 32 36 L 46 28 L 60 36 L 46 44 Z M 32 43 L 46 51 L 60 43 M 32 50 L 46 58 L 60 50" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="90" y="38" fill="#0f172a" font-size="14" font-weight="700">Amazon S3 Relational Database Storage</text>
+    <text x="90" y="55" fill="#15803d" font-size="11" font-weight="600">sales-intel-dev-db-ap-south-1-516869793582 / accounts.db</text>
+    <text x="90" y="72" fill="#475569" font-size="10.5">• 1.23 GB SQLite Relational Store | 11 Normalized Tables | 372,467 Business Accounts</text>
+    <text x="90" y="86" fill="#64748b" font-size="9.5">• In-Memory &amp; /tmp Ephemeral Fast Streaming Caching across all 8 microservices</text>
+  </g>
+
+  <!-- Google Gemini 3.1 Flash Lite Card -->
+  <g transform="translate(620, 530)">
+    <rect width="530" height="92" rx="8" fill="#f5f3ff" stroke="#ddd6fe" stroke-width="1.2"/>
+    <rect x="16" y="16" width="60" height="60" rx="10" fill="url(#geminiGrad)" filter="url(#iconShadow)"/>
+    <!-- Gemini Sparkle Icon -->
+    <path d="M 46 26 C 46 38, 38 46, 26 46 C 38 46, 46 54, 46 66 C 46 54, 54 46, 66 46 C 54 46, 46 38, 46 26 Z" fill="#ffffff"/>
+    <text x="90" y="38" fill="#0f172a" font-size="14" font-weight="700">Google Gemini 3.1 Flash Lite Inference</text>
+    <text x="90" y="55" fill="#6d28d9" font-size="11" font-weight="600">Model: gemini-3.1-flash-lite (Enterprise BYOK &amp; Platform Keys)</text>
+    <text x="90" y="72" fill="#475569" font-size="10.5">• 4-Tier Forensic Calibration (1–100) &amp; Executive Outreach Pitch Synthesis</text>
+    <text x="90" y="86" fill="#64748b" font-size="9.5">• Grounded in CISA KEV Exploitation Catalogs, CVE Records, and Tech Fingerprints</text>
+  </g>
+
+  <!-- Connectors from Microservices to Storage / AI -->
+  <path d="M 457 460 L 457 524" fill="none" stroke="#7AA116" stroke-width="2.5" marker-end="url(#arrowGreen)"/>
+  <path d="M 1017 460 L 1017 524" fill="none" stroke="#8b5cf6" stroke-width="2.5" marker-end="url(#arrowPurple)"/>
+</svg>

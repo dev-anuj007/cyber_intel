@@ -1,0 +1,34 @@
+# Root .dockerignore - Speeds up Docker build context transfer dramatically
+
+# Node modules & frontend caches
+frontend/node_modules
+frontend/dist
+frontend/.vite
+
+# Python Virtual Environments & Caches
+**/.venv
+**/venv
+**/env
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.pytest_cache
+**/.tox
+**/.coverage
+**/*.cover
+
+# Git & IDEs
+.git
+.gitignore
+.cursor
+.vscode
+.idea
+
+# Local build outputs & logs
+**/*.log
+*.db
+downloaded_accounts.db
+traces/
+results/
+infrastructure/pulumi/venv/

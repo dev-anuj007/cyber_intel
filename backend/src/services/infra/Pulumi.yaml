@@ -1,0 +1,6 @@
+name: sales-intel-infra
+runtime:
+  name: python
+  options:
+    virtualenv: ../../../.venv
+description: Pulumi Python IaC for Sales Intelligence Platform on AWS Serverless (Lambda Microservices + S3 DB + API Gateway + Frontend Website)

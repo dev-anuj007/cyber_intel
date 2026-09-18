@@ -1,0 +1,91 @@
+# Environment
+.env
+.env.local
+.env.*.local
+
+b2_download_file_by_id.jsonl
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Node.js / Frontend
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+dist/
+out/
+.next/
+.turbo/
+.vite/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+backend/traces/
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+
+# Project specific
+backend/.venv/
+frontend/node_modules/
+.cache/
+
+# Databases
+accounts.db
+*.sqlite
+*.sqlite3
+*.db
+
+# Eval results & traces
+backend/src/services/eval/results/
+backend/src/services/eval/traces/
+evals/results/
+evals/traces/
+traces/
+results/
+
+# Documentation builds
+docs/site/
+site/
+
+# IDE / Gemini / Agent files
+.gemini/
+.agents/

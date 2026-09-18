@@ -1,0 +1,8 @@
+config:
+  aws:region: ap-south-1
+  sales-intel-infra:appName: sales-intel
+  sales-intel-infra:environment: dev
+  sales-intel-infra:geminiModel: gemini-3.1-flash-lite
+  sales-intel-infra:geminiApiKey:
+    secure: v1:ZL46EtX54ZUYrDBV:8qXn3eIiqOoahoQAOySRRA6lkwqN1PPNdVUETIEf8ZCSjiSMmlSoNPuQeJkV3Dg1J9v4a4RY06nOesePEhC+H84QBnlu
+encryptionsalt: v1:nIrUaEpw+Z4=:v1:xm7JeQb3duOAbzcU:N+fCd3EzfLHh2gG0RRptPKuoNZp4xQ==

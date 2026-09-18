@@ -1,0 +1,83 @@
+.ui-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.ui-input-label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-secondary, #94a3b8);
+  letter-spacing: 0.01em;
+}
+
+.ui-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.ui-input {
+  width: 100%;
+  padding: 10px 14px;
+  background: var(--bg-card, rgba(30, 41, 59, 0.6));
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+  color: var(--text-primary, #f1f5f9);
+  font-family: inherit;
+  font-size: 0.875rem;
+  transition: all 0.2s ease;
+  outline: none;
+}
+
+.ui-input.with-icon {
+  padding-left: 38px;
+}
+
+.ui-input-prefix-icon {
+  position: absolute;
+  left: 12px;
+  color: var(--text-secondary, #94a3b8);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+}
+
+.ui-input-right-element {
+  position: absolute;
+  right: 8px;
+  display: flex;
+  align-items: center;
+}
+
+.ui-input:focus {
+  border-color: var(--accent-primary, #3b82f6);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+  background: var(--bg-surface, #1e293b);
+}
+
+.ui-input-group.has-error .ui-input {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15);
+}
+
+.ui-input-error-msg {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #ef4444;
+}
+
+.ui-input-hint-msg {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-secondary, #94a3b8);
+}
+
+/* Mobile responsive font-size to prevent iOS Safari auto-zoom */
+@media (max-width: 768px) {
+  .ui-input {
+    font-size: 16px;
+  }
+}

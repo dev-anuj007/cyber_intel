@@ -1,0 +1,18 @@
+.accounts-page-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.accounts-page-search-wrapper {
+  margin-bottom: 12px;
+}
+
+.accounts-page-list-wrapper {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
+  transition: all 0.2s ease;
+}

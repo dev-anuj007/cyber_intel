@@ -1,0 +1,1 @@
+"""Aggregator service tests package."""

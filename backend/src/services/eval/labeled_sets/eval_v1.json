@@ -1,0 +1,265 @@
+[
+  {
+    "account_key": "domain:example-corp.com",
+    "expected_tier": "tier_1_critical",
+    "expected_score": 95,
+    "reasoning": "Enterprise with ransomware-associated vulnerabilities, critical CVSS scores (9.2), and CISA KEV exploits. Immediate threat profile.",
+    "domains": ["example-corp.com"],
+    "critical_signals": [
+      "ransomware_associated_vulnerability",
+      "kev_vulnerability",
+      "high_severity_vulnerability"
+    ]
+  },
+  {
+    "account_key": "domain:government-agency.gov",
+    "expected_tier": "tier_1_critical",
+    "expected_score": 98,
+    "reasoning": "Government agency with ransomware-linked vulnerabilities, critical CVSS scores (9.8), KEV exploits. High national security exposure.",
+    "domains": ["government-agency.gov"],
+    "critical_signals": [
+      "ransomware_associated_vulnerability",
+      "kev_vulnerability",
+      "high_severity_vulnerability",
+      "high_exploitation_probability"
+    ]
+  },
+  {
+    "account_key": "domain:metro-health-system.org",
+    "expected_tier": "tier_1_critical",
+    "expected_score": 93,
+    "reasoning": "Regional hospital network with active CISA KEV vulnerabilities in PACS/imaging portal, ransomware group targeting history, and HIPAA liability.",
+    "domains": ["metro-health-system.org"],
+    "critical_signals": [
+      "kev_vulnerability",
+      "ransomware_associated_vulnerability",
+      "high_severity_vulnerability"
+    ]
+  },
+  {
+    "account_key": "domain:energy-utilities.co",
+    "expected_tier": "tier_1_critical",
+    "expected_score": 92,
+    "reasoning": "Critical infrastructure utility company with KEV vulnerabilities, high CVSS (9.1), and exposed critical SCADA/management ports.",
+    "domains": ["energy-utilities.co"],
+    "critical_signals": [
+      "kev_vulnerability",
+      "high_severity_vulnerability",
+      "non_standard_exposed_port"
+    ]
+  },
+  {
+    "account_key": "domain:logistics-freight.com",
+    "expected_tier": "tier_1_critical",
+    "expected_score": 90,
+    "reasoning": "Global supply chain logistics provider with active remote code execution (RCE) KEV exploit on perimeter VPN gateway.",
+    "domains": ["logistics-freight.com"],
+    "critical_signals": [
+      "kev_vulnerability",
+      "high_exploitation_probability",
+      "high_severity_vulnerability"
+    ]
+  },
+  {
+    "account_key": "domain:defense-contractor-sub.com",
+    "expected_tier": "tier_1_critical",
+    "expected_score": 96,
+    "reasoning": "Aerospace defense supplier with ransomware weaponized vulnerability on exposed FTP/management gateway.",
+    "domains": ["defense-contractor-sub.com"],
+    "critical_signals": [
+      "ransomware_associated_vulnerability",
+      "high_severity_vulnerability",
+      "high_exploitation_probability"
+    ]
+  },
+  {
+    "account_key": "domain:finance-startup.io",
+    "expected_tier": "tier_2_high",
+    "expected_score": 78,
+    "reasoning": "Financial services fintech with multiple high-severity vulnerabilities (CVSS 7.8), high EPSS (0.65), but no active ransomware association.",
+    "domains": ["finance-startup.io"],
+    "critical_signals": [
+      "high_severity_vulnerability",
+      "high_exploitation_probability",
+      "multiple_vulnerabilities"
+    ]
+  },
+  {
+    "account_key": "domain:old-legacy-sys.org",
+    "expected_tier": "tier_2_high",
+    "expected_score": 75,
+    "reasoning": "Large public organization running unpatched EOL products (Windows Server 2003 / Apache 2.2). Significant unmaintained perimeter risk.",
+    "domains": ["old-legacy-sys.org"],
+    "critical_signals": [
+      "eol_product",
+      "multiple_vulnerabilities"
+    ]
+  },
+  {
+    "account_key": "domain:retail-chain.com",
+    "expected_tier": "tier_2_high",
+    "expected_score": 76,
+    "reasoning": "National retail chain with multiple CVSS 7.6 vulnerabilities across e-commerce payment infrastructure and large attack surface.",
+    "domains": ["retail-chain.com"],
+    "critical_signals": [
+      "high_severity_vulnerability",
+      "multiple_vulnerabilities"
+    ]
+  },
+  {
+    "account_key": "domain:healthcare-clinic.org",
+    "expected_tier": "tier_2_high",
+    "expected_score": 80,
+    "reasoning": "Healthcare provider with multiple high vulnerabilities (CVSS 7.2) and exposed patient portal systems (HIPAA compliance risk).",
+    "domains": ["healthcare-clinic.org"],
+    "critical_signals": [
+      "high_severity_vulnerability",
+      "multiple_vulnerabilities"
+    ]
+  },
+  {
+    "account_key": "domain:regional-creditunion.bank",
+    "expected_tier": "tier_2_high",
+    "expected_score": 82,
+    "reasoning": "Regional bank with unpatched high-severity CVEs in mobile banking API endpoint and legacy TLS ciphers.",
+    "domains": ["regional-creditunion.bank"],
+    "critical_signals": [
+      "high_severity_vulnerability",
+      "high_exploitation_probability"
+    ]
+  },
+  {
+    "account_key": "domain:pharmaceutical-labs.com",
+    "expected_tier": "tier_2_high",
+    "expected_score": 80,
+    "reasoning": "Biotech research firm with EOL web frameworks and multiple high-severity vulnerabilities exposing IP and trial data.",
+    "domains": ["pharmaceutical-labs.com"],
+    "critical_signals": [
+      "eol_product",
+      "high_severity_vulnerability"
+    ]
+  },
+  {
+    "account_key": "domain:manufacturing-group.net",
+    "expected_tier": "tier_2_high",
+    "expected_score": 75,
+    "reasoning": "Industrial manufacturer with legacy ERP exposed to internet and multiple unpatched perimeter flaws.",
+    "domains": ["manufacturing-group.net"],
+    "critical_signals": [
+      "eol_product",
+      "multiple_vulnerabilities"
+    ]
+  },
+  {
+    "account_key": "domain:tech-saas.com",
+    "expected_tier": "tier_3_medium",
+    "expected_score": 55,
+    "reasoning": "Mid-sized B2B SaaS company with moderate vulnerabilities (CVSS 6.2), non-standard open ports (8080/8443), but no critical KEV signals.",
+    "domains": ["tech-saas.com"],
+    "critical_signals": [
+      "multiple_vulnerabilities",
+      "non_standard_exposed_port"
+    ]
+  },
+  {
+    "account_key": "domain:media-publishing.co",
+    "expected_tier": "tier_3_medium",
+    "expected_score": 52,
+    "reasoning": "Digital publishing company with outdated CMS plugins (medium severity) and exposed staging subdomains.",
+    "domains": ["media-publishing.co"],
+    "critical_signals": [
+      "multiple_vulnerabilities"
+    ]
+  },
+  {
+    "account_key": "domain:consulting-partners.com",
+    "expected_tier": "tier_3_medium",
+    "expected_score": 50,
+    "reasoning": "Professional services firm with multiple medium informational CVEs and non-standard admin ports on auxiliary hosts.",
+    "domains": ["consulting-partners.com"],
+    "critical_signals": [
+      "multiple_vulnerabilities",
+      "non_standard_exposed_port"
+    ]
+  },
+  {
+    "account_key": "domain:ecommerce-boutique.shop",
+    "expected_tier": "tier_3_medium",
+    "expected_score": 58,
+    "reasoning": "Mid-sized online store with multiple medium CVEs (CVSS 5.5) in caching layer and non-standard analytics ports open.",
+    "domains": ["ecommerce-boutique.shop"],
+    "critical_signals": [
+      "multiple_vulnerabilities",
+      "non_standard_exposed_port"
+    ]
+  },
+  {
+    "account_key": "domain:edtech-learning.org",
+    "expected_tier": "tier_3_medium",
+    "expected_score": 50,
+    "reasoning": "Educational platform with standard web stack, multiple medium vulnerabilities, and non-standard debug ports.",
+    "domains": ["edtech-learning.org"],
+    "critical_signals": [
+      "multiple_vulnerabilities",
+      "non_standard_exposed_port"
+    ]
+  },
+  {
+    "account_key": "domain:legal-advisors.law",
+    "expected_tier": "tier_3_medium",
+    "expected_score": 48,
+    "reasoning": "Law firm with moderate vulnerabilities in web document management portal and open staging endpoints.",
+    "domains": ["legal-advisors.law"],
+    "critical_signals": [
+      "multiple_vulnerabilities"
+    ]
+  },
+  {
+    "account_key": "domain:secure-bank.com",
+    "expected_tier": "tier_4_low",
+    "expected_score": 25,
+    "reasoning": "Well-maintained Tier-1 financial institution with zero critical/high vulnerabilities, strict ports (443 only), and strong cloud posture.",
+    "domains": ["secure-bank.com"],
+    "critical_signals": []
+  },
+  {
+    "account_key": "domain:startup-fresh.io",
+    "expected_tier": "tier_4_low",
+    "expected_score": 15,
+    "reasoning": "Early-stage SaaS on modern serverless cloud (AWS CloudFront / Vercel), minimal attack surface, zero detected vulnerabilities.",
+    "domains": ["startup-fresh.io"],
+    "critical_signals": []
+  },
+  {
+    "account_key": "domain:modern-fintech.app",
+    "expected_tier": "tier_4_low",
+    "expected_score": 20,
+    "reasoning": "Cloud-native fintech company with automated CI/CD patching, WAF protection, and zero exposed legacy endpoints.",
+    "domains": ["modern-fintech.app"],
+    "critical_signals": []
+  },
+  {
+    "account_key": "domain:local-accounting-firm.com",
+    "expected_tier": "tier_4_low",
+    "expected_score": 20,
+    "reasoning": "Small regional accounting firm with a static marketing website hosted on managed CDN, minimal attack surface.",
+    "domains": ["local-accounting-firm.com"],
+    "critical_signals": []
+  },
+  {
+    "account_key": "domain:design-agency-creative.co",
+    "expected_tier": "tier_4_low",
+    "expected_score": 15,
+    "reasoning": "Creative agency with single static domain, no backend database or sensitive services exposed.",
+    "domains": ["design-agency-creative.co"],
+    "critical_signals": []
+  },
+  {
+    "account_key": "domain:enterprise-cloud-native.io",
+    "expected_tier": "tier_4_low",
+    "expected_score": 18,
+    "reasoning": "Enterprise technology provider with hardened infrastructure, zero CVEs discovered on external scan.",
+    "domains": ["enterprise-cloud-native.io"],
+    "critical_signals": []
+  }
+]
