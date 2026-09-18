@@ -6,26 +6,30 @@ Responsible for:
 - S3 Static Website Hosting for React frontend & documentation
 """
 
-from .contracts import (
-    ServiceInfraContext,
-    ServiceInfraOutput,
-    SharedInfraOutput,
-    MicroservicesInfraOutput,
-    FrontendInfraOutput,
-)
-from .shared import provision_shared_infra
-from .microservices import provision_microservices_infra
-from .frontend import provision_frontend_infra
-from .main import provision_all_infra
+try:
+    from .contracts import (
+        ServiceInfraContext,
+        ServiceInfraOutput,
+        SharedInfraOutput,
+        MicroservicesInfraOutput,
+        FrontendInfraOutput,
+    )
+    from .shared import provision_shared_infra
+    from .microservices import provision_microservices_infra
+    from .frontend import provision_frontend_infra
+    from .main import provision_all_infra
 
-__all__ = [
-    "ServiceInfraContext",
-    "ServiceInfraOutput",
-    "SharedInfraOutput",
-    "MicroservicesInfraOutput",
-    "FrontendInfraOutput",
-    "provision_shared_infra",
-    "provision_microservices_infra",
-    "provision_frontend_infra",
-    "provision_all_infra",
-]
+    __all__ = [
+        "ServiceInfraContext",
+        "ServiceInfraOutput",
+        "SharedInfraOutput",
+        "MicroservicesInfraOutput",
+        "FrontendInfraOutput",
+        "provision_shared_infra",
+        "provision_microservices_infra",
+        "provision_frontend_infra",
+        "provision_all_infra",
+    ]
+except ImportError:
+    __all__ = []
+

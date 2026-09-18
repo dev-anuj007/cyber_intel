@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { api } from "../../api";
 import { useAppStore } from "../../store";
-import { BackgroundJobSummary, BackgroundJobDetail, JobStatusType } from "../../types";
+import { BackgroundJobSummary, BackgroundJobDetail, JobStatusType, ScannerEngineInfo } from "../../types";
 import "./CrawlerAppPage.css";
 
 interface Props {
@@ -13,12 +13,52 @@ type ScanDepth = "quick" | "standard" | "deep";
 type TabView = "jobs" | "results";
 type StatusFilter = "all" | "running" | "completed" | "failed";
 
+const DEFAULT_SCANNERS: ScannerEngineInfo[] = [
+  {
+    id: "all",
+    name: "Comprehensive Security Suite (All Engines)",
+    description: "Orchestrates Standard Network Crawler, OWASP ZAP DAST, ProjectDiscovery (Subfinder/HTTPX/Nuclei), and CISA KEV threat feeds simultaneously.",
+    badge: "Recommended · Full Depth",
+    icon: "🚀",
+  },
+  {
+    id: "standard",
+    name: "Standard Network & Banner Crawler",
+    description: "Multi-threaded DNS resolution, common subdomains, port probing, and cloud provider fingerprinting.",
+    badge: "Fast Network Recon",
+    icon: "🌐",
+  },
+  {
+    id: "owasp_zap",
+    name: "OWASP ZAP DAST Vulnerability Scanner",
+    description: "OWASP Top 10 Web App Security Auditor: CSP, HSTS, CORS, Clickjacking, Cookie Flags, and Sensitive Exposure.",
+    badge: "DAST & Web Audit",
+    icon: "🛡️",
+  },
+  {
+    id: "projectdiscovery",
+    name: "ProjectDiscovery Suite (Subfinder, HTTPX, Naabu, Nuclei)",
+    description: "Subdomain discovery, fast multi-port probing, technology fingerprinting, and Nuclei vulnerability template scanning.",
+    badge: "Deep Recon",
+    icon: "⚡",
+  },
+  {
+    id: "cisa_kev",
+    name: "CISA KEV & Exploited CVE Threat Feed",
+    description: "Correlates perimeter banners and technologies against the official CISA Known Exploited Vulnerabilities catalog.",
+    badge: "Threat Intel",
+    icon: "🚨",
+  },
+];
+
 export const CrawlerAppPage: React.FC<Props> = ({ onBackToAccounts, onSelectAccount }) => {
   const { openProfileModal, currentUser } = useAppStore();
 
   const [pipelineName, setPipelineName] = useState<string>("");
   const [domainsInput, setDomainsInput] = useState<string>("stripe.com, shopify.com");
   const [scanDepth, setScanDepth] = useState<ScanDepth>("standard");
+  const [selectedScanner, setSelectedScanner] = useState<string>("all");
+  const [availableScanners, setAvailableScanners] = useState<ScannerEngineInfo[]>(DEFAULT_SCANNERS);
   const [enableSubdomains, setEnableSubdomains] = useState<boolean>(true);
   const [saveToDb, setSaveToDb] = useState<boolean>(true);
   const [customPortsInput, setCustomPortsInput] = useState<string>("");
@@ -57,6 +97,11 @@ export const CrawlerAppPage: React.FC<Props> = ({ onBackToAccounts, onSelectAcco
 
   useEffect(() => {
     fetchJobs();
+    api.getAvailableScanners().then((res) => {
+      if (res && res.scanners && res.scanners.length > 0) {
+        setAvailableScanners(res.scanners);
+      }
+    }).catch(() => {});
   }, [fetchJobs]);
 
   // Click outside listener for options popover
@@ -125,6 +170,7 @@ export const CrawlerAppPage: React.FC<Props> = ({ onBackToAccounts, onSelectAcco
         pipeline_name: pipelineName.trim() || undefined,
         domains,
         scan_depth: scanDepth,
+        scanner_type: selectedScanner,
         enable_subdomains: enableSubdomains,
         custom_ports: ports.length > 0 ? ports : undefined,
         save_to_database: saveToDb,
@@ -334,7 +380,37 @@ export const CrawlerAppPage: React.FC<Props> = ({ onBackToAccounts, onSelectAcco
             </div>
           </div>
 
-          {/* ROW 2: Scan Depth, Options & Launch Button */}
+          {/* ROW 2: Security Scanner Engine & Tooling Selector Grid */}
+          <div className="scanner-engine-selector-section">
+            <div className="scanner-section-header">
+              <span className="scanner-section-label">🛠️ Select Security Scanner Engines &amp; Threat Intelligence:</span>
+              <span className="scanner-active-tag">
+                Selected: <strong>{availableScanners.find(s => s.id === selectedScanner)?.name || "Comprehensive Security Suite"}</strong>
+              </span>
+            </div>
+
+            <div className="scanner-options-grid">
+              {availableScanners.map((sc) => {
+                const isSelected = selectedScanner === sc.id;
+                return (
+                  <div
+                    key={sc.id}
+                    className={`scanner-option-card ${isSelected ? "selected" : ""}`}
+                    onClick={() => setSelectedScanner(sc.id)}
+                  >
+                    <div className="scanner-card-top">
+                      <span className="scanner-card-icon">{sc.icon}</span>
+                      <span className="scanner-card-badge">{sc.badge}</span>
+                    </div>
+                    <div className="scanner-card-title">{sc.name}</div>
+                    <div className="scanner-card-desc">{sc.description}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ROW 3: Scan Depth, Options & Launch Button */}
           <div className="launchpad-row-bottom">
             <div className="launchpad-bottom-left">
               {/* Scan Depth Selector */}
@@ -429,7 +505,7 @@ export const CrawlerAppPage: React.FC<Props> = ({ onBackToAccounts, onSelectAcco
                   </>
                 ) : (
                   <>
-                    <span>🚀 Launch Perimeter Scan</span>
+                    <span>🚀 Launch Security Recon</span>
                   </>
                 )}
               </button>
@@ -753,6 +829,12 @@ export const CrawlerAppPage: React.FC<Props> = ({ onBackToAccounts, onSelectAcco
                           <div className="domain-card-name">
                             <span className="sub-globe">🌐</span>
                             <h5>{res.domain}</h5>
+                            {res.version && <span className="version-badge-pill">{res.version}</span>}
+                            {res.scanner_type && (
+                              <span className="scanner-badge-pill">
+                                {res.scanner_type === "all" ? "🚀 FULL SUITE" : `⚙️ ${res.scanner_type.toUpperCase()}`}
+                              </span>
+                            )}
                             <span className="domain-latency-pill">{res.elapsed_ms}ms</span>
                           </div>
 
@@ -794,6 +876,12 @@ export const CrawlerAppPage: React.FC<Props> = ({ onBackToAccounts, onSelectAcco
                                   {res.signals_detected_count}
                                 </strong>
                               </div>
+                              {res.vulnerabilities_count > 0 && (
+                                <div className="counter-pill vuln-pill">
+                                  <span>CVEs / Audits:</span>
+                                  <strong>{res.vulnerabilities_count}</strong>
+                                </div>
+                              )}
                             </div>
 
                             {/* Tech & Hosts */}
@@ -822,6 +910,21 @@ export const CrawlerAppPage: React.FC<Props> = ({ onBackToAccounts, onSelectAcco
                                 </div>
                               </div>
                             </div>
+
+                            {/* Vulnerabilities Section */}
+                            {res.vulnerabilities && res.vulnerabilities.length > 0 && (
+                              <div className="domain-signals-section">
+                                <span className="signals-header-title">🛡️ Identified Vulnerabilities &amp; DAST Audits ({res.vulnerabilities.length}):</span>
+                                <div className="signals-pills-flow">
+                                  {res.vulnerabilities.map((v: any, idx: number) => (
+                                    <span key={idx} className={`signal-tag ${v.severity?.toLowerCase() || "high"}`}>
+                                      <span className="sev-dot" />
+                                      <span><strong>[{v.id || "VULN"}]</strong> {v.name} {v.severity ? `(${v.severity})` : ""}</span>
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
 
                             {/* Security Signals */}
                             {res.signals && res.signals.length > 0 && (

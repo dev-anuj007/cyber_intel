@@ -67,6 +67,7 @@ def submit_crawler_job(
         "pipeline_name": req.pipeline_name.strip() if req.pipeline_name else None,
         "domains": clean_domains,
         "scan_depth": req.scan_depth,
+        "scanner_type": req.scanner_type or "all",
         "enable_subdomains": req.enable_subdomains,
         "custom_ports": req.custom_ports,
         "save_to_database": req.save_to_database,
@@ -89,6 +90,15 @@ def submit_crawler_job(
         status=JobStatus.QUEUED,
         message=f"Perimeter scan queued for {len(clean_domains)} domains",
     )
+
+
+@router.get("/scanners")
+def list_available_scanners():
+    """List all registered security scanner engines (Standard, OWASP ZAP, ProjectDiscovery, CISA KEV)."""
+    from src.services.crawler.scanners import ScannerFactory
+    return {
+        "scanners": ScannerFactory.list_available_scanners(),
+    }
 
 
 @router.get("/jobs", response_model=JobListResponse)
@@ -166,6 +176,7 @@ def execute_crawler_run(
             res = crawler.crawl_domain(
                 domain=clean,
                 scan_depth=req.scan_depth,
+                scanner_type=req.scanner_type or "all",
                 enable_subdomains=req.enable_subdomains,
                 custom_ports=req.custom_ports,
                 save_to_database=req.save_to_database,

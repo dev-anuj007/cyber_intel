@@ -5,6 +5,7 @@ from pydantic import BaseModel
 class CrawlerRunRequest(BaseModel):
     domains: List[str]
     scan_depth: str = "standard"
+    scanner_type: str = "all"
     enable_subdomains: bool = True
     custom_ports: Optional[List[int]] = None
     save_to_database: bool = True
@@ -14,6 +15,7 @@ class CrawlerJobSubmitRequest(BaseModel):
     domains: List[str]
     pipeline_name: Optional[str] = None
     scan_depth: str = "standard"
+    scanner_type: str = "all"
     enable_subdomains: bool = True
     custom_ports: Optional[List[int]] = None
     save_to_database: bool = True
@@ -36,6 +38,7 @@ class CrawlerJobSummary(BaseModel):
     assets_discovered_count: int
     signals_detected_count: int
     scan_depth: str
+    scanner_type: str = "all"
     retry_count: int
     max_retries: int
     domains_preview: List[str]
@@ -55,6 +58,7 @@ class CrawlerJobDetail(BaseModel):
     assets_discovered_count: int
     signals_detected_count: int
     scan_depth: str
+    scanner_type: str = "all"
     enable_subdomains: bool
     save_to_database: bool
     custom_ports: Optional[List[int]] = None

@@ -521,6 +521,157 @@
   border-color: var(--color-primary);
 }
 
+/* ========================================================================= */
+/* Multi-Scanner Engine Selector Grid                                       */
+/* ========================================================================= */
+
+.scanner-engine-selector-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-top: 2px;
+}
+
+.scanner-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.scanner-section-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.scanner-active-tag {
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+.scanner-active-tag strong {
+  color: var(--color-primary);
+}
+
+.scanner-options-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+}
+
+.scanner-option-card {
+  background: var(--bg-secondary);
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: all 0.18s ease;
+  position: relative;
+  user-select: none;
+}
+
+.scanner-option-card:hover {
+  border-color: var(--color-primary);
+  background: var(--bg-hover);
+  transform: translateY(-1px);
+}
+
+.scanner-option-card.selected {
+  border-color: var(--color-primary);
+  background: rgba(37, 99, 235, 0.08);
+  box-shadow: 0 0 0 1px var(--color-primary), 0 2px 8px rgba(37, 99, 235, 0.15);
+}
+
+[data-theme="dark"] .scanner-option-card.selected {
+  background: rgba(37, 99, 235, 0.18);
+}
+
+.scanner-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.scanner-card-icon {
+  font-size: 1.15rem;
+}
+
+.scanner-card-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(37, 99, 235, 0.12);
+  color: var(--color-primary);
+  border: 1px solid rgba(37, 99, 235, 0.25);
+  text-transform: uppercase;
+}
+
+.scanner-card-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.scanner-card-desc {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Badges for Version & Scanner */
+.version-badge-pill {
+  font-size: 0.72rem;
+  font-weight: 800;
+  background: rgba(124, 58, 237, 0.15);
+  border: 1px solid rgba(124, 58, 237, 0.35);
+  color: #8b5cf6;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+[data-theme="dark"] .version-badge-pill {
+  color: #a78bfa;
+}
+
+.scanner-badge-pill {
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: rgba(37, 99, 235, 0.12);
+  border: 1px solid rgba(37, 99, 235, 0.3);
+  color: var(--color-primary);
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.counter-pill.vuln-pill {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+}
+
 /* Launch Button in Scan Bar */
 .btn-launch-row {
   background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);

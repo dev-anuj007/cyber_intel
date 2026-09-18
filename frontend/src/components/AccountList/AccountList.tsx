@@ -223,6 +223,7 @@ export const AccountList: React.FC<AccountListProps> = ({
                   const domainsList = account.domains || (account.domain ? [account.domain] : []);
                   const extraDomains = Math.max(0, domainsList.length - 1);
                   const aiScoreVal = account.ai_score ?? account.latest_score?.score;
+                  const accountVersion = account.version || (account.account_key.includes(":v") ? account.account_key.split(":").pop() : "v1");
 
                   return (
                     <tr
@@ -234,8 +235,11 @@ export const AccountList: React.FC<AccountListProps> = ({
                       <td className="cell-domain">
                         <div className="domain-primary-wrap">
                           <span className="domain-globe-icon">🌐</span>
-                          <span className="domain-main-text" title={primaryDomain}>
+                          <span className="domain-main-text" title={`${primaryDomain} (${accountVersion})`}>
                             {primaryDomain}
+                          </span>
+                          <span className={`domain-version-badge ${accountVersion}`} title={`Scan Snapshot Version: ${accountVersion}`}>
+                            {accountVersion}
                           </span>
                           <button
                             className="domain-copy-btn"

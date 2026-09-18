@@ -90,8 +90,15 @@ class AccountReader(IAccountReader):
 
         primary_domain = domains[0] if domains else canonical_key.replace("domain:", "")
 
+        version = "v1"
+        if canonical_key.count(":") >= 2:
+            parts = canonical_key.split(":")
+            if parts[-1].startswith("v") and parts[-1][1:].isdigit():
+                version = parts[-1]
+
         return Account(
             account_key=canonical_key,
+            version=version,
             domain=primary_domain,
             domains=domains,
             priority_tier=priority_tier,
@@ -242,9 +249,16 @@ class AccountReader(IAccountReader):
 
         accounts_by_key = {}
         for aid, key in id_to_key.items():
+            version = "v1"
+            if key.count(":") >= 2:
+                parts = key.split(":")
+                if parts[-1].startswith("v") and parts[-1][1:].isdigit():
+                    version = parts[-1]
+
             if as_dict:
                 accounts_by_key[key] = {
                     "account_key": key,
+                    "version": version,
                     "domains": domains_map[aid],
                     "assets": assets_map[aid],
                     "ips": ips_map[aid],
@@ -257,6 +271,7 @@ class AccountReader(IAccountReader):
             else:
                 accounts_by_key[key] = Account(
                     account_key=key,
+                    version=version,
                     domains=domains_map[aid],
                     assets=assets_map[aid],
                     ips=ips_map[aid],
@@ -367,8 +382,16 @@ class AccountReader(IAccountReader):
             total_assets = assets_count_map[aid]
             total_subdomains = subdomains_count_map[aid]
             latest_score = scores_map.get(key)
+
+            version = "v1"
+            if key.count(":") >= 2:
+                parts = key.split(":")
+                if parts[-1].startswith("v") and parts[-1][1:].isdigit():
+                    version = parts[-1]
+
             accounts_by_key[key] = {
                 "account_key": key,
+                "version": version,
                 "domain": primary_domain,
                 "domains": domains_map[aid],
                 "priority_tier": tier,

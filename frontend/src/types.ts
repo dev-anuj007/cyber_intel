@@ -47,6 +47,7 @@ export interface ScoreHistoryResponse {
 
 export interface Account {
   account_key: string;
+  version?: string;
   domain?: string;
   domains: string[];
   priority_tier?: PriorityTier;
@@ -282,6 +283,24 @@ export interface JobSubmitResponse {
   status: JobStatusType;
   message: string;
   trace_id?: string | null;
+}
+
+export interface ScannerEngineInfo {
+  id: string;
+  name: string;
+  description: string;
+  badge: string;
+  icon: string;
+}
+
+export interface CrawlerSubmitOptions {
+  domains: string[];
+  pipeline_name?: string;
+  scan_depth?: "quick" | "standard" | "deep";
+  scanner_type?: string;
+  enable_subdomains?: boolean;
+  custom_ports?: number[];
+  save_to_database?: boolean;
 }
 
 

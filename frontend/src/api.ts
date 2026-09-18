@@ -9,6 +9,7 @@ import {
   BackgroundJobDetail,
   BackgroundJobListResponse,
   JobSubmitResponse,
+  ScannerEngineInfo,
 } from "./types";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
@@ -200,9 +201,15 @@ class APIClient {
   }
 
   // Web Crawler & Prospecting Methods (App)
+  async getAvailableScanners(): Promise<{ scanners: ScannerEngineInfo[] }> {
+    const response = await this.client.get<{ scanners: ScannerEngineInfo[] }>("/crawler/scanners");
+    return response.data;
+  }
+
   async runCrawler(params: {
     domains: string[];
     scan_depth?: string;
+    scanner_type?: string;
     enable_subdomains?: boolean;
     custom_ports?: number[];
     save_to_database?: boolean;
@@ -215,6 +222,7 @@ class APIClient {
     domains: string[];
     pipeline_name?: string;
     scan_depth?: string;
+    scanner_type?: string;
     enable_subdomains?: boolean;
     custom_ports?: number[];
     save_to_database?: boolean;
