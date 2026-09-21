@@ -1,12 +1,12 @@
 import os
-import json
 import socket
-import ssl
+from typing import Any, Dict, List, Optional, Set
+
 import httpx
-from typing import List, Dict, Any, Optional, Set
+
 from src.services.accounts.types import Asset, SecuritySignal, SignalSeverity
 from src.services.aggregator.aggregator_service import normalize_domain
-from src.services.crawler.scanners.base import IScanner, ScanResult
+from src.services.crawler.scanners.base import ScanResult
 from src.services.logger import get_logger
 
 logger = get_logger("crawler.scanners.owasp_zap")
@@ -31,7 +31,7 @@ class OwaspZapScanner:
         self,
         zap_url: Optional[str] = None,
         zap_api_key: Optional[str] = None,
-        timeout: float = 2.5,
+        timeout: float = 0.2,
     ):
         self.zap_url = zap_url or os.getenv("ZAP_API_URL", "http://localhost:8080")
         self.zap_api_key = zap_api_key or os.getenv("ZAP_API_KEY", "")
@@ -40,7 +40,9 @@ class OwaspZapScanner:
     def _check_zap_daemon(self) -> bool:
         try:
             with httpx.Client(timeout=1.0) as client:
-                resp = client.get(f"{self.zap_url}/JSON/core/view/version/", headers={"X-ZAP-API-Key": self.zap_api_key})
+                resp = client.get(
+                    f"{self.zap_url}/JSON/core/view/version/", headers={"X-ZAP-API-Key": self.zap_api_key}
+                )
                 return resp.status_code == 200
         except Exception:
             return False
@@ -60,9 +62,7 @@ class OwaspZapScanner:
         try:
             ip = socket.gethostbyname(clean_domain)
         except Exception:
-            ip = "0.0.0.0"
-
-        assets.append(Asset(ip=ip, port=443, hostname=clean_domain))
+            ip = None
 
         # 1. Probe HTTP/HTTPS Headers & OWASP Security Controls
         headers: Dict[str, str] = {}
@@ -75,7 +75,7 @@ class OwaspZapScanner:
                 status_code = resp.status_code
                 headers = {k.lower(): v for k, v in resp.headers.items()}
                 cookies = resp.headers.get_list("set-cookie")
-            except Exception as e:
+            except Exception:
                 # Fallback to HTTP
                 try:
                     resp = client.get(f"http://{clean_domain}", headers={"User-Agent": "OWASP-ZAP-DAST-Scanner/2.14"})
@@ -84,6 +84,39 @@ class OwaspZapScanner:
                     cookies = resp.headers.get_list("set-cookie")
                 except Exception:
                     pass
+
+        if status_code is None and not headers and not ip:
+            return ScanResult(
+                domain=clean_domain,
+                scanner_type=self.scanner_type,
+                assets=[],
+                signals=[],
+                ips=[],
+                hostnames=[],
+                ports=[],
+                products=[],
+                cloud_providers=[],
+                vulnerabilities=[],
+                metadata={"engine": "owasp_zap_dast_auditor", "rules_evaluated": 0, "vulnerabilities_found": 0},
+            )
+
+        if ip:
+            assets.append(Asset(ip=ip, port=443, hostname=clean_domain))
+
+        if not headers:
+            return ScanResult(
+                domain=clean_domain,
+                scanner_type=self.scanner_type,
+                assets=assets,
+                signals=[],
+                ips=[ip] if ip else [],
+                hostnames=[clean_domain] if ip else [],
+                ports=list(ports) if ip else [],
+                products=[],
+                cloud_providers=[],
+                vulnerabilities=[],
+                metadata={"engine": "owasp_zap_dast_auditor", "rules_evaluated": 0, "vulnerabilities_found": 0},
+            )
 
         # OWASP Rule 1: Content-Security-Policy (CSP)
         csp = headers.get("content-security-policy", "")
@@ -96,12 +129,14 @@ class OwaspZapScanner:
                     evidence=f"{clean_domain} lacks a Content-Security-Policy header, leaving web clients vulnerable to Cross-Site Scripting (XSS) and data injection attacks.",
                 )
             )
-            vulnerabilities.append({
-                "id": "OWASP-ZAP-10038",
-                "name": "Content Security Policy (CSP) Header Not Set",
-                "severity": "High",
-                "cwe": "CWE-693",
-            })
+            vulnerabilities.append(
+                {
+                    "id": "OWASP-ZAP-10038",
+                    "name": "Content Security Policy (CSP) Header Not Set",
+                    "severity": "High",
+                    "cwe": "CWE-693",
+                }
+            )
         elif "unsafe-inline" in csp or "unsafe-eval" in csp:
             signals.append(
                 SecuritySignal(
@@ -123,12 +158,14 @@ class OwaspZapScanner:
                     evidence=f"{clean_domain} does not enforce Strict-Transport-Security, allowing potential SSL-stripping and man-in-the-middle attacks.",
                 )
             )
-            vulnerabilities.append({
-                "id": "OWASP-ZAP-10035",
-                "name": "Strict-Transport-Security Header Not Set",
-                "severity": "Medium",
-                "cwe": "CWE-319",
-            })
+            vulnerabilities.append(
+                {
+                    "id": "OWASP-ZAP-10035",
+                    "name": "Strict-Transport-Security Header Not Set",
+                    "severity": "Medium",
+                    "cwe": "CWE-319",
+                }
+            )
 
         # OWASP Rule 3: Anti-Clickjacking (X-Frame-Options)
         xfo = headers.get("x-frame-options", "").upper()
@@ -141,12 +178,14 @@ class OwaspZapScanner:
                     evidence=f"{clean_domain} lacks X-Frame-Options or CSP frame-ancestors, exposing users to UI redressing and clickjacking.",
                 )
             )
-            vulnerabilities.append({
-                "id": "OWASP-ZAP-10020",
-                "name": "Anti-clickjacking Header Missing",
-                "severity": "Medium",
-                "cwe": "CWE-1021",
-            })
+            vulnerabilities.append(
+                {
+                    "id": "OWASP-ZAP-10020",
+                    "name": "Anti-clickjacking Header Missing",
+                    "severity": "Medium",
+                    "cwe": "CWE-1021",
+                }
+            )
 
         # OWASP Rule 4: MIME-Type Sniffing Protection
         xcto = headers.get("x-content-type-options", "").lower()
@@ -156,7 +195,7 @@ class OwaspZapScanner:
                     name="MIME-Type Sniffing Allowed",
                     severity=SignalSeverity.LOW,
                     category="misconfiguration",
-                    evidence=f"Missing 'X-Content-Type-Options: nosniff' header.",
+                    evidence="Missing 'X-Content-Type-Options: nosniff' header.",
                 )
             )
 
@@ -171,12 +210,14 @@ class OwaspZapScanner:
                     evidence=f"Access-Control-Allow-Origin is set to wildcard '*' on {clean_domain}.",
                 )
             )
-            vulnerabilities.append({
-                "id": "OWASP-ZAP-WASC-14",
-                "name": "CORS Misconfiguration - Wildcard Origin",
-                "severity": "High",
-                "cwe": "CWE-942",
-            })
+            vulnerabilities.append(
+                {
+                    "id": "OWASP-ZAP-WASC-14",
+                    "name": "CORS Misconfiguration - Wildcard Origin",
+                    "severity": "High",
+                    "cwe": "CWE-942",
+                }
+            )
 
         # OWASP Rule 6: Server & Technology Leakage
         server_hdr = headers.get("server", "")
@@ -226,7 +267,7 @@ class OwaspZapScanner:
                 )
 
         # 2. Sensitive Path and Endpoint Fuzzing
-        with httpx.Client(verify=False, timeout=1.5, follow_redirects=False) as client:
+        with httpx.Client(verify=False, timeout=0.2, follow_redirects=False) as client:
             for path, desc in SENSITIVE_PATHS:
                 try:
                     p_resp = client.get(f"{target_url}{path}")
@@ -234,17 +275,21 @@ class OwaspZapScanner:
                         signals.append(
                             SecuritySignal(
                                 name=f"Sensitive Endpoint Exposed ({desc})",
-                                severity=SignalSeverity.HIGH if ".env" in path or ".git" in path else SignalSeverity.MEDIUM,
+                                severity=SignalSeverity.HIGH
+                                if ".env" in path or ".git" in path
+                                else SignalSeverity.MEDIUM,
                                 category="exposure",
                                 evidence=f"Exposed URL returned HTTP 200: {target_url}{path} ({len(p_resp.content)} bytes)",
                             )
                         )
-                        vulnerabilities.append({
-                            "id": f"OWASP-PATH-{path.replace('/', '_')}",
-                            "name": desc,
-                            "severity": "High" if ".env" in path or ".git" in path else "Medium",
-                            "url": f"{target_url}{path}",
-                        })
+                        vulnerabilities.append(
+                            {
+                                "id": f"OWASP-PATH-{path.replace('/', '_')}",
+                                "name": desc,
+                                "severity": "High" if ".env" in path or ".git" in path else "Medium",
+                                "url": f"{target_url}{path}",
+                            }
+                        )
                 except Exception:
                     pass
 
@@ -253,11 +298,11 @@ class OwaspZapScanner:
             scanner_type=self.scanner_type,
             assets=assets,
             signals=signals,
-            ips=[ip],
-            hostnames=[clean_domain],
-            ports=list(ports),
-            products=list(products) or ["Web Application"],
-            cloud_providers=list(cloud_providers) or ["Web Hosting"],
+            ips=[ip] if ip else [],
+            hostnames=[clean_domain] if ip else [],
+            ports=list(ports) if ip else [],
+            products=list(products),
+            cloud_providers=list(cloud_providers),
             vulnerabilities=vulnerabilities,
             metadata={
                 "engine": "owasp_zap_dast_auditor",

@@ -45,6 +45,16 @@ export interface ScoreHistoryResponse {
   history: ScoreHistoryItem[];
 }
 
+export interface AccountVersionSummary {
+  version: string;
+  account_key: string;
+  priority_tier?: PriorityTier | string;
+  signals_count: number;
+  assets_count: number;
+  ai_score?: number | null;
+  is_active?: boolean;
+}
+
 export interface Account {
   account_key: string;
   version?: string;
@@ -67,6 +77,8 @@ export interface Account {
   signals: SecuritySignal[];
   ai_score?: number | null;
   latest_score?: ScoreHistoryItem | null;
+  total_versions?: number;
+  available_versions?: AccountVersionSummary[];
 }
 
 export interface AccountScore {
@@ -120,11 +132,13 @@ export interface AuthResponse {
 export type AuthModalMode = "signin" | "signup";
 
 export interface PromptTemplateInfo {
-  filename: string;
+  filename?: string;
   name: string;
   version: string;
-  type: string;
+  type?: string;
   template: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface EvalPrediction {
@@ -266,7 +280,7 @@ export interface BackgroundJobSummary {
 
 export interface BackgroundJobDetail extends BackgroundJobSummary {
   payload: Record<string, any>;
-  results?: any[] | null;
+  results?: any;
 }
 
 export interface BackgroundJobListResponse {
@@ -301,6 +315,13 @@ export interface CrawlerSubmitOptions {
   enable_subdomains?: boolean;
   custom_ports?: number[];
   save_to_database?: boolean;
+}
+
+export interface PromptRegisterRequest {
+  name: string;
+  version: string;
+  template: string;
+  prompt_type?: string;
 }
 
 

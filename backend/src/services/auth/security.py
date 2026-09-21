@@ -1,11 +1,12 @@
 import hashlib
 import hmac
 import secrets
-import jwt
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 
-from src.core.config import JWT_SECRET, JWT_ALGORITHM, JWT_EXPIRATION_HOURS
+import jwt
+
+from src.core.config import JWT_ALGORITHM, JWT_EXPIRATION_HOURS, JWT_SECRET
 
 
 def hash_password(password: str, salt: Optional[str] = None) -> Tuple[str, str]:

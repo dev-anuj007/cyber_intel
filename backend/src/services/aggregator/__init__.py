@@ -2,16 +2,16 @@
 
 from src.services.aggregator.aggregator_service import (
     AggregatorService,
+    build_accounts,
     default_aggregator_service,
-    normalize_domain,
-    is_valid_account_domain,
-    is_dynamic_ip_ptr,
-    is_infrastructure_transit_domain,
-    extract_root_domain_match,
     detect_signals,
     extract_features,
-    build_accounts,
+    extract_root_domain_match,
+    is_dynamic_ip_ptr,
+    is_infrastructure_transit_domain,
+    is_valid_account_domain,
     load_accounts_from_jsonl,
+    normalize_domain,
     resolve_account_keys,
 )
 from src.services.aggregator.types import IAggregatorService

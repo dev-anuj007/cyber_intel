@@ -1,4 +1,5 @@
-from typing import Protocol, List, Dict, Any, Optional, Tuple
+from typing import Any, Dict, List, Optional, Protocol, Tuple
+
 from pydantic import BaseModel
 
 
@@ -82,54 +83,70 @@ class CrawlerJobListResponse(BaseModel):
 
 
 class ICrawlerReader(Protocol):
-    def get_cached_scan(self, domain: str) -> Optional[dict]:
-        ...
+    def get_cached_scan(self, domain: str) -> Optional[dict]: ...
 
 
 class ICrawlerWriter(Protocol):
-    def cache_scan(self, domain: str, scan_data: dict) -> None:
-        ...
+    def cache_scan(self, domain: str, scan_data: dict) -> None: ...
 
 
 class ICrawlerJobsRepository(Protocol):
-    def create_job(self, conn, **kwargs) -> str:
-        ...
+    def create_job(self, conn, **kwargs) -> str: ...
 
-    def get_job(self, conn, job_id: str) -> Optional[Dict[str, Any]]:
-        ...
+    def get_job(self, conn, job_id: str) -> Optional[Dict[str, Any]]: ...
 
-    def list_jobs(self, conn, skip: int = 0, limit: int = 20, status: Optional[str] = None) -> Tuple[List[Dict[str, Any]], int]:
-        ...
+    def list_jobs(
+        self, conn, skip: int = 0, limit: int = 20, status: Optional[str] = None
+    ) -> Tuple[List[Dict[str, Any]], int]: ...
 
-    def update_job_status(self, conn, job_id: str, status: str, error_message: Optional[str] = None) -> None:
-        ...
+    def update_job_status(self, conn, job_id: str, status: str, error_message: Optional[str] = None) -> None: ...
 
-    def update_job_progress(self, conn, job_id: str, completed_count: int, assets_count: int, signals_count: int, results: List[Dict[str, Any]]) -> None:
-        ...
+    def update_job_progress(
+        self,
+        conn,
+        job_id: str,
+        completed_count: int,
+        assets_count: int,
+        signals_count: int,
+        results: List[Dict[str, Any]],
+    ) -> None: ...
 
-    def complete_job(self, conn, job_id: str, results: List[Dict[str, Any]], assets_count: int, signals_count: int) -> None:
-        ...
+    def complete_job(
+        self, conn, job_id: str, results: List[Dict[str, Any]], assets_count: int, signals_count: int
+    ) -> None: ...
 
-    def fail_job(self, conn, job_id: str, error_message: str) -> None:
-        ...
+    def fail_job(self, conn, job_id: str, error_message: str) -> None: ...
 
 
 class ICrawlerService(Protocol):
-    def resolve_ip(self, host: str) -> Optional[str]:
-        ...
-
-    def probe_http_banner(self, host: str, port: int) -> Dict[str, Any]:
-        ...
-
-    def check_port_open(self, ip: str, port: int) -> bool:
-        ...
-
     def crawl_domain(
         self,
         domain: str,
         scan_depth: str = "standard",
+        scanner_type: str = "all",
         enable_subdomains: bool = True,
         custom_ports: Optional[List[int]] = None,
         save_to_database: bool = False,
-    ) -> Dict[str, Any]:
-        ...
+    ) -> Dict[str, Any]: ...
+
+    def scan_domain(
+        self,
+        domain: str,
+        scan_depth: str = "standard",
+        scanner_type: str = "standard",
+        enable_subdomains: bool = True,
+        custom_ports: Optional[List[int]] = None,
+        save_to_database: bool = False,
+        **kwargs: Any,
+    ) -> Dict[str, Any]: ...
+
+    def crawl_domain_with_retries(
+        self,
+        domain: str,
+        scan_depth: str = "standard",
+        scanner_type: str = "all",
+        enable_subdomains: bool = True,
+        custom_ports: Optional[List[int]] = None,
+        save_to_database: bool = False,
+        max_retries: int = 3,
+    ) -> Dict[str, Any]: ...

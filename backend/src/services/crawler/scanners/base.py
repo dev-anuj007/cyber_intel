@@ -1,5 +1,7 @@
-from typing import Protocol, List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional, Protocol
+
 from pydantic import BaseModel
+
 from src.services.accounts.types import Asset, SecuritySignal
 
 
@@ -23,5 +25,4 @@ class IScanner(Protocol):
     display_name: str
     description: str
 
-    def scan(self, domain: str, options: Optional[Dict[str, Any]] = None) -> ScanResult:
-        ...
+    def scan(self, domain: str, options: Optional[Dict[str, Any]] = None) -> ScanResult: ...

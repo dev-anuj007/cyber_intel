@@ -1,46 +1,73 @@
-from pathlib import Path
-from typing import Optional
-from contextlib import contextmanager
+"""Database service module.
 
+All production/staging paths use the global ``default_database_service``
+which is backed by PostgreSQL (DATABASE_URL env var).
+
+The ``db_path`` parameter on ``DatabaseService.__init__`` is preserved for
+test isolation only — tests instantiate their own ``DatabaseService(db_path=...)``
+directly and never go through these module-level helpers with a path argument.
+"""
+
+import os
+from contextlib import contextmanager
+from typing import Any, Optional
+
+from src.services.database.api import get_db_service
+from src.services.database.api import router as database_router
+from src.services.database.database_service import DatabaseService
 from src.services.database.types import (
-    IDatabaseService,
     DatabaseHealth,
     DatabaseStats,
+    IDatabaseService,
     QueryRequest,
     QueryResponse,
 )
-from src.services.database.database_service import DatabaseService
-from src.services.database.dynamo import (
-    is_deployed,
-    get_dynamo_resource,
-    get_dynamo_client,
-    get_table_name,
-    float_to_decimal,
-    decimal_to_python,
-)
-from src.services.database.api import router as database_router, get_db_service
-from src.services.database.s3_storage import S3DirectStorage
 
 default_database_service = DatabaseService()
 
 
+def is_deployed() -> bool:
+    """Returns True if running in AWS Lambda / Cloud environment."""
+    return bool(
+        os.getenv("AWS_LAMBDA_FUNCTION_NAME")
+        or os.getenv("STAGE") == "prod"
+        or os.getenv("LAMBDA_TASK_ROOT")
+    )
+
+
 @contextmanager
-def get_db_connection(db_path: Optional[Path] = None):
-    if db_path is not None:
-        service = DatabaseService(db_path=db_path)
-        with service.get_connection() as conn:
-            yield conn
-    else:
-        with default_database_service.get_connection() as conn:
-            yield conn
+def get_db_connection():
+    """Yield a raw PostgreSQL connection from the default service pool."""
+    with default_database_service.get_connection() as conn:
+        yield conn
 
 
-def init_database(db_path: Optional[Path] = None) -> None:
-    if db_path is not None:
-        service = DatabaseService(db_path=db_path)
-        service.init_schema()
-    else:
-        default_database_service.init_schema()
+def get_db_session(conn: Optional[Any] = None):
+    """Return a SQLModel Session.
+
+    If ``conn`` is a raw SQLite connection (test isolation), wrap it directly.
+    Otherwise use the default PostgreSQL-backed service.
+    """
+    import sqlite3
+    from sqlmodel import create_engine
+
+    if conn is not None:
+        raw = conn
+        if hasattr(raw, "_conn"):
+            raw = raw._conn
+        if hasattr(raw, "raw_connection"):
+            raw = raw.raw_connection
+        if isinstance(raw, sqlite3.Connection):
+            from sqlmodel import Session
+            engine = create_engine("sqlite://", creator=lambda: raw)
+            return Session(engine)
+
+    return default_database_service.get_session(conn)
+
+
+def init_database() -> None:
+    """Initialize schema on the default PostgreSQL database."""
+    default_database_service.init_schema()
 
 
 __all__ = [
@@ -53,13 +80,8 @@ __all__ = [
     "default_database_service",
     "database_router",
     "get_db_service",
-    "S3DirectStorage",
     "get_db_connection",
+    "get_db_session",
     "init_database",
     "is_deployed",
-    "get_dynamo_resource",
-    "get_dynamo_client",
-    "get_table_name",
-    "float_to_decimal",
-    "decimal_to_python",
 ]

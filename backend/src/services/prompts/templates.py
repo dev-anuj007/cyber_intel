@@ -1,4 +1,4 @@
-from typing import Dict, List, Any
+from typing import Any, Dict, List
 
 ACCOUNT_SCORING_V2 = """You are a Senior Cybersecurity Sales Intelligence & Risk Analyst. Your objective is to score this B2B account based on their objective likelihood of requiring immediate external attack surface management, vulnerability remediation, or threat detection services.
 

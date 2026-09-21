@@ -1,118 +1,172 @@
-# Cybersecurity Sales Intelligence Platform
+# Sales Intelligence Platform
 
-An AI-native B2B sales prospecting and attack surface intelligence platform that identifies, scores, and prioritizes businesses most likely to need cybersecurity solutions right now.
+A local-first web application for B2B cybersecurity prospecting and account intelligence. It combines a FastAPI backend, a Vite + React frontend, PostgreSQL-backed storage, and Gemini-powered scoring to help teams review account risk, account signals, and score history from a single workspace.
 
 ---
 
-## ⚡ Quick Start
+## What this project does
 
-### Prerequisites
-- Python 3.10+
+- Surfaces account-level summaries and detail views for sales and security prospecting
+- Lets users sign in with JWT-based auth and store their own Gemini API key
+- Searches and filters accounts by domain, signal, and priority tier
+- Scores accounts with Gemini using account context plus discovered signals
+- Runs developer evaluation flows and prompt comparison jobs
+- Exposes a modular backend with dedicated service packages for auth, accounts, scorer, crawler, jobs, eval, and prompts
+
+---
+
+## Tech stack
+
+- Backend: Python, FastAPI, SQLModel, PostgreSQL, PyJWT, google-genai
+- Frontend: React, TypeScript, Vite, Zustand, Axios
+- Database: PostgreSQL via `DATABASE_URL`; SQLite is only used for test isolation
+- Observability: Logfire optional instrumentation
+- Testing: pytest + coverage
+
+---
+
+## Prerequisites
+
+- Python 3.11+
 - Node.js 18+
-- Google Gemini API Key (`GEMINI_API_KEY`)
+- PostgreSQL instance or local Postgres service
+- Gemini API key for scoring and eval workflows
 
-### 1. Backend Setup
+---
+
+## Local setup
+
+### 1. Backend
 
 ```bash
 cd backend
 python -m venv .venv
 
-# Windows
-.venv\Scripts\activate
-# macOS/Linux
+# Windows PowerShell
+.\.venv\Scripts\Activate.ps1
+
+# macOS / Linux
 source .venv/bin/activate
 
 pip install -r requirements.txt
+copy .env.example .env
+```
 
-# Start FastAPI server on port 8000
+Then update `.env` with your local values, for example:
+
+```env
+DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/sales_intel
+GEMINI_API_KEY=your_key_here
+JWT_SECRET=change-this-in-local-dev
+GEMINI_MODEL=gemini-3.1-flash-lite
+```
+
+Start the API:
+
+```bash
 python src/main.py
 ```
 
-### 2. Frontend Setup
+The backend listens on `http://localhost:8000` and exposes Swagger docs at `http://localhost:8000/docs`.
+
+### 2. Frontend
 
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
-Open `http://localhost:5173` in your browser.
+
+Open the Vite app at `http://localhost:5173`.
 
 ---
 
-## 📁 Repository Structure
+## Key backend entry points
 
-```
+The main app is mounted in `backend/src/main.py` and includes the following routers:
+
+- `/api/auth`
+- `/api/accounts`
+- `/api/score`
+- `/api/crawler`
+- `/api/eval`
+- `/api/prompts`
+- `/api/jobs`
+- `/api/database`
+
+A health check is available at:
+
+- `GET /health`
+- `GET /`
+
+---
+
+## Repository layout
+
+```text
 .
-├── backend/                 # FastAPI backend & database engine
+├── backend/
 │   ├── src/
-│   │   ├── main.py          # FastAPI REST routes (search, filters, scoring)
-│   │   ├── models.py        # Pydantic data contracts (Account, Signal, LLMTrace)
-│   │   ├── database.py      # SQLite query engine (50,000+ accounts)
-│   │   └── account_scorer.py# LLM scoring & tracing engine (Google GenAI)
-│   ├── traces/              # Immutable JSONL LLM execution logs
-│   └── requirements.txt
-│
-├── frontend/                # React 18 + TypeScript SPA
+│   │   ├── core/
+│   │   ├── main.py
+│   │   └── services/
+│   │       ├── accounts/
+│   │       ├── auth/
+│   │       ├── crawler/
+│   │       ├── database/
+│   │       ├── eval/
+│   │       ├── jobs/
+│   │       ├── logger/
+│   │       ├── prompts/
+│   │       └── scorer/
+│   ├── .env.example
+│   ├── requirements.txt
+│   └── pyproject.toml
+├── frontend/
 │   ├── src/
-│   │   ├── App.tsx          # Main dashboard view & layout
-│   │   ├── components/      # UI components (AccountList, Detail, Header, Search)
-│   │   ├── store.ts         # Zustand state management
-│   │   └── api.ts           # Axios backend client
-│   └── package.json
-│
-├── skills/                  # Reusable Agent Skills (SKILL.md specs)
-│   ├── account-scoring/
-│   │   └── SKILL.md         # Account risk scoring & prioritization skill
-│   └── outreach-generator/
-│       └── SKILL.md         # Consultative sales outreach generator skill
-│
-├── prompts/                 # Versioned Prompt Registry
-│   ├── account_scoring_v1.0.txt  # Baseline prompt
-│   ├── account_scoring_v2.0.txt  # Calibrated production prompt with strict tiers
-│   └── outreach_draft_v1.0.txt   # Consultative outreach generation prompt
-│
-├── backend/src/services/eval/ # Self-Contained Evaluation Microservice
-│   ├── labeled_sets/
-│   │   └── eval_v1.json     # 25 hand-labeled ground-truth benchmark cases
-│   ├── results/             # Versioned evaluation benchmark reports
-│   ├── eval_harness.py      # One-command eval & comparative benchmark runner
-│   ├── eval_service.py      # Eval service orchestration & repository layer
-│   └── api.py               # REST API endpoints (/api/eval/*)
-│
-└── docs/                    # Technical & Strategic Documentation
-    ├── PLANNING.md          # Strategy, ICP, buyer personas & workflows
-    ├── ARCHITECTURE.md      # System architecture, rule-vs-LLM split, cost model
-    └── HOW_YOU_BUILD.md     # Agentic dev loop reflection & trade-offs
+│   ├── package.json
+│   └── vite.config.ts
+├── docs/
+│   ├── mkdocs.yml
+│   └── src/
+├── script/
+│   ├── bootstrap_e2e_test.py
+│   ├── migrate_sqlite_to_postgres.py
+│   └── validate_crawler_signals.py
+├── conftest.py
+├── pytest.ini
+├── pyrightconfig.json
+├── GEMINI.md
+└── README.md
 ```
 
 ---
 
-## 🔬 AI-Native Scaffolding & Evaluation
+## Typical development workflow
 
-### Run Evaluation Harness
-Run the evaluation harness on the calibrated **Prompt v2.0**:
-```bash
-python -m src.services.eval.eval_harness --prompt-version v2.0
-```
-
-### Run Side-by-Side Prompt Comparison (v1.0 vs v2.0)
-```bash
-python -m src.services.eval.eval_harness --compare
-```
-This runs both prompt versions against the 25 hand-labeled ground-truth test cases and outputs a side-by-side performance table measuring:
-- **Tier Classification Accuracy**
-- **Precision, Recall, and F1-Scores** per tier
-- **Macro and Weighted F1-Scores**
-- **Score MAE (Mean Absolute Error) & RMSE**
-- **% of predictions within ±5 points**
+1. Start PostgreSQL and configure `DATABASE_URL` in the backend environment
+2. Run the FastAPI app locally
+3. Sign in through the frontend and add a Gemini API key in the profile modal
+4. Use the accounts dashboard to search, inspect signals, and score accounts
+5. Run eval and prompt workflows from the developer tools section in the UI
+6. Run unit tests from the backend with `pytest`
 
 ---
 
-## 💰 Production Cost Economics
+## Testing
 
-| Model | Task | Cost per Account | Cost per 1,000 Accounts |
-| :--- | :--- | :--- | :--- |
-| **Gemini 3.6 Flash / Flash Lite** | High-volume batch & real-time scoring | **~$0.00018 USD** | **$0.18 USD** |
-| **Gemini Pro** | Deep executive battlecard synthesis | **~$0.00300 USD** | **$3.00 USD** |
+```bash
+cd backend
+pytest
+```
 
-*Production Safeguard:* Automated heuristic pre-filtering classifies accounts with zero detected vulnerabilities as Tier 4 without invoking LLM inference, keeping monthly platform operating costs below $15.00 for tens of thousands of accounts.
+The repo includes service-level tests under each `src/services/*/tests` package. SQLite-backed temp DBs are used for test isolation; production logic expects PostgreSQL via `DATABASE_URL`.
+
+---
+
+## Notes
+
+- `DATABASE_URL` is the main runtime dependency for the app.
+- SQLite connection paths are used only in tests and isolated database fixtures.
+- The app supports BYOK Gemini keys per user, as well as environment-level fallback configuration for local development.
+- The UI and API are designed to work together, with the frontend automatically attaching JWT bearer tokens when a user is logged in.

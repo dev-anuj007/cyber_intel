@@ -1,11 +1,11 @@
-from src.services.database import DatabaseService, default_database_service
 from src.services.accounts import AccountsService, default_accounts_service
 from src.services.aggregator import AggregatorService, default_aggregator_service
-from src.services.scorer import ScorerService, default_scorer_service
+from src.services.auth import AuthService, default_auth_service
 from src.services.crawler import CrawlerService, default_crawler_service
+from src.services.database import DatabaseService, default_database_service
 from src.services.eval import EvalService, default_eval_service
-from src.services.auth import AuthService, default_auth_service, get_current_user_optional, get_current_user
-from src.services.logger import LoggerService, default_logger_service, BaseLogger, get_logger
+from src.services.logger import BaseLogger, LoggerService, default_logger_service, get_logger
+from src.services.scorer import ScorerService, default_scorer_service
 
 logger = get_logger("core.dependencies")
 

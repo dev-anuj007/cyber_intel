@@ -36,9 +36,7 @@ logfire.configure(
     token=LOGFIRE_TOKEN,
     service_name="sales-intel-api",
     send_to_logfire=True,
-    additional_span_processors=[
-        BatchSpanProcessor(grafana_otlp_exporter)
-    ],
+    additional_span_processors=[BatchSpanProcessor(grafana_otlp_exporter)],
 )
 ```
 

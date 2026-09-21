@@ -1,21 +1,22 @@
 from typing import Optional
+
 from fastapi import APIRouter, Depends, Header
 
 from src.core.exceptions import (
     AuthenticationError,
-    InvalidInputError,
-    NotFoundError,
     ConflictError,
     ExternalServiceError,
-)
-from src.services.auth.types import (
-    UserSignupRequest,
-    UserSigninRequest,
-    UserResponse,
-    AuthResponse,
-    ApiKeyUpdateRequest,
+    InvalidInputError,
+    NotFoundError,
 )
 from src.services.auth.auth_service import AuthService, default_auth_service
+from src.services.auth.types import (
+    ApiKeyUpdateRequest,
+    AuthResponse,
+    UserResponse,
+    UserSigninRequest,
+    UserSignupRequest,
+)
 from src.services.logger import update_journey_context
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
@@ -47,6 +48,11 @@ def get_current_user(
             code="UNAUTHENTICATED",
         )
     return current_user
+
+
+@router.get("/health")
+def auth_health():
+    return {"status": "healthy", "service": "auth"}
 
 
 @router.post("/signup", response_model=AuthResponse)
@@ -86,20 +92,45 @@ def get_current_user_profile(
     return auth_service.format_user_response(current_user)
 
 
-@router.post("/api-key", response_model=UserResponse)
-def set_user_api_key(
-    req: ApiKeyUpdateRequest,
+@router.post("/api-key")
+def create_or_set_user_api_key(
+    req: Optional[ApiKeyUpdateRequest] = None,
     current_user: dict = Depends(get_current_user),
     auth_service: AuthService = Depends(get_auth_service),
 ):
     try:
-        return auth_service.set_user_api_key(current_user["id"], req.api_key)
+        if req and req.api_key:
+            auth_service.set_user_api_key(current_user["id"], req.api_key)
+            return {"api_key": req.api_key, "user_id": current_user["id"], "success": True}
+        else:
+            api_key = auth_service.create_api_key(current_user["id"])
+            return {"api_key": api_key, "user_id": current_user["id"], "success": True}
     except ValueError as e:
         raise InvalidInputError(message=str(e), code="INVALID_API_KEY")
     except LookupError as e:
         raise NotFoundError(message=str(e), code="USER_NOT_FOUND")
     except Exception as e:
-        raise ExternalServiceError(message=f"Failed to save API key: {str(e)}", code="API_KEY_SAVE_FAILED")
+        raise ExternalServiceError(message=f"Failed to process API key: {str(e)}", code="API_KEY_FAILED")
+
+
+@router.get("/api-key/list")
+def list_user_api_keys(
+    current_user: dict = Depends(get_current_user),
+    auth_service: AuthService = Depends(get_auth_service),
+):
+    keys = auth_service.list_api_keys(current_user["id"])
+    return {"items": keys, "total": len(keys)}
+
+
+@router.post("/api-key/revoke")
+def revoke_user_api_key(
+    req: Optional[dict] = None,
+    current_user: dict = Depends(get_current_user),
+    auth_service: AuthService = Depends(get_auth_service),
+):
+    key = req.get("api_key") if isinstance(req, dict) else None
+    auth_service.revoke_api_key(current_user["id"], key)
+    return {"success": True, "message": "API key revoked"}
 
 
 @router.delete("/api-key", response_model=UserResponse)
@@ -113,4 +144,3 @@ def delete_user_api_key(
         raise NotFoundError(message=str(e), code="USER_NOT_FOUND")
     except Exception as e:
         raise ExternalServiceError(message=f"Failed to remove API key: {str(e)}", code="API_KEY_DELETE_FAILED")
-

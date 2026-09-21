@@ -14,9 +14,7 @@ def provision_service_infra(ctx: ServiceInfraContext) -> ServiceInfraOutput:
         role=ctx.lambda_role_arn,
         package_type="Image",
         image_uri=ctx.get_image_uri(service_name),
-        image_config=aws.lambda_.FunctionImageConfigArgs(
-            commands=["src.services.prompts.lambda_handler.handler"]
-        ),
+        image_config=aws.lambda_.FunctionImageConfigArgs(commands=["src.services.prompts.lambda_handler.handler"]),
         memory_size=512,
         timeout=30,
         environment=aws.lambda_.FunctionEnvironmentArgs(variables=ctx.common_env_vars),

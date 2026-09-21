@@ -1,9 +1,9 @@
-from typing import Optional, Dict
+from typing import Dict, Optional
+
 from src.services.crawler.types import ICrawlerReader
 
 
 class CrawlerReader(ICrawlerReader):
-
     def __init__(self):
         self._cache: Dict[str, dict] = {}
 

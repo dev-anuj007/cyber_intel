@@ -89,3 +89,7 @@ site/
 # IDE / Gemini / Agent files
 .gemini/
 .agents/
+
+# Local scripts
+script/
+

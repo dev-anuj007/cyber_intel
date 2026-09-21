@@ -241,6 +241,11 @@ export const AccountList: React.FC<AccountListProps> = ({
                           <span className={`domain-version-badge ${accountVersion}`} title={`Scan Snapshot Version: ${accountVersion}`}>
                             {accountVersion}
                           </span>
+                          {account.total_versions && account.total_versions > 1 ? (
+                            <span className="domain-multi-versions-badge" title={`${account.total_versions} scan snapshots available in detail view`}>
+                              {account.total_versions} versions
+                            </span>
+                          ) : null}
                           <button
                             className="domain-copy-btn"
                             onClick={(e) => handleCopy(e, primaryDomain)}

@@ -3,7 +3,7 @@
 import json
 import re
 from collections import defaultdict
-from typing import Dict, List, Optional, Tuple, Set
+from typing import Dict, List, Optional, Set, Tuple
 
 from src.services.accounts.types import Account, Asset, SecuritySignal, SignalSeverity
 from src.services.aggregator.types import IAggregatorService
@@ -12,7 +12,7 @@ from src.services.logger import get_logger
 logger = get_logger("services.aggregator")
 
 
-def normalize_domain(domain: str) -> str:
+def normalize_domain(domain: Optional[str] = None) -> str:
     """Normalize domain to lowercase and strip whitespace and trailing dots."""
     if not domain or not isinstance(domain, str):
         return ""
@@ -37,11 +37,33 @@ def is_dynamic_ip_ptr(hostname: str) -> bool:
     if not hostname:
         return False
     h = hostname.lower().strip()
-    if re.search(r'\b\d{1,3}[-\.]\d{1,3}[-\.]\d{1,3}[-\.]\d{1,3}\b', h):
+    if re.search(r"\b\d{1,3}[-\.]\d{1,3}[-\.]\d{1,3}[-\.]\d{1,3}\b", h):
         return True
-    if re.match(r'^(ip|node|host|cpe|static|dynamic|pool|dialup|cust|broadband|dsl|fiber|vps|server|ec2|vm)[0-9\-_]', h):
+    if re.match(
+        r"^(ip|node|host|cpe|static|dynamic|pool|dialup|cust|broadband|dsl|fiber|vps|server|ec2|vm)[0-9\-_]", h
+    ):
         return True
     return False
+
+
+TRANSIT_DOMAINS = {
+    "cloudflare.net",
+    "incapdns.net",
+    "akamai.net",
+    "akamaitechnologies.com",
+    "fastly.net",
+    "cloudfront.net",
+    "azureedge.net",
+    "awsglobalaccelerator.com",
+    "cdn77.org",
+    "edgekey.net",
+    "edgesuite.net",
+    "trafficmanager.net",
+    "amazonaws.com",
+    "googleusercontent.com",
+    "cloudapp.azure.com",
+    "azurewebsites.net",
+}
 
 
 def is_infrastructure_transit_domain(domain: str) -> bool:
@@ -53,6 +75,9 @@ def is_infrastructure_transit_domain(domain: str) -> bool:
         return True
     if is_dynamic_ip_ptr(d):
         return True
+    for transit in TRANSIT_DOMAINS:
+        if d == transit or d.endswith("." + transit):
+            return True
     return False
 
 
@@ -111,7 +136,7 @@ class AggregatorService(IAggregatorService):
 
         return sorted(list(set(f"domain:{d}" for d in valid_domains)))
 
-    def get_asset_id(self, features: dict) -> Optional[Tuple[str, Optional[int], Optional[str]]]:
+    def get_asset_id(self, features: dict) -> Optional[Tuple[Optional[str], Optional[int], Optional[str]]]:
         """Generate unique asset identity tuple from IP, port, hostname."""
         ip = features.get("ip")
         port = features.get("port")
@@ -171,7 +196,7 @@ class AggregatorService(IAggregatorService):
         if record.get("ip"):
             ip_int = record.get("ip")
             if isinstance(ip_int, int):
-                ip_value = f"{(ip_int >> 24) & 0xff}.{(ip_int >> 16) & 0xff}.{(ip_int >> 8) & 0xff}.{ip_int & 0xff}"
+                ip_value = f"{(ip_int >> 24) & 0xFF}.{(ip_int >> 16) & 0xFF}.{(ip_int >> 8) & 0xFF}.{ip_int & 0xFF}"
             else:
                 ip_value = str(ip_int)
 
@@ -342,10 +367,7 @@ class AggregatorService(IAggregatorService):
                     if features.get("product") and features["product"] not in account.products:
                         account.products.append(features["product"])
 
-                    if (
-                        features.get("cloud_provider")
-                        and features["cloud_provider"] not in account.cloud_providers
-                    ):
+                    if features.get("cloud_provider") and features["cloud_provider"] not in account.cloud_providers:
                         account.cloud_providers.append(features["cloud_provider"])
 
                     for s in signals:
@@ -357,6 +379,21 @@ class AggregatorService(IAggregatorService):
 
             logger.info("Accounts aggregated successfully", total_accounts=len(accounts), input_records=len(records))
             return accounts
+
+    def process_record(
+        self, record: dict
+    ) -> Tuple[List[str], Optional[Tuple[Optional[str], Optional[int], Optional[str]]], List[SecuritySignal]]:
+        """Process a single raw record and return resolved account keys, asset identifier, and detected signals."""
+        features = self.extract_features(record)
+        signals = self.detect_signals(features)
+        account_keys = self.resolve_account_keys(record)
+        asset_id = self.get_asset_id(features)
+        return account_keys, asset_id, signals
+
+    def aggregate(self, records: List[dict]) -> List[Account]:
+        """Aggregate multiple raw scan records into a list of Account entities."""
+        accounts_dict = self.build_accounts(records)
+        return list(accounts_dict.values())
 
     def load_accounts_from_jsonl(self, jsonl_path: str, limit: Optional[int] = None) -> Dict[str, Account]:
         with logger.span("aggregator.load_jsonl", path=jsonl_path, limit=limit):
@@ -378,5 +415,7 @@ default_aggregator_service = AggregatorService()
 detect_signals = default_aggregator_service.detect_signals
 extract_features = default_aggregator_service.extract_features
 build_accounts = default_aggregator_service.build_accounts
+aggregate = default_aggregator_service.aggregate
+process_record = default_aggregator_service.process_record
 load_accounts_from_jsonl = default_aggregator_service.load_accounts_from_jsonl
 resolve_account_keys = default_aggregator_service.resolve_account_keys

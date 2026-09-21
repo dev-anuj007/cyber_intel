@@ -1,7 +1,3 @@
-"""Accounts Microservice Dedicated Pulumi Infrastructure Setup."""
-
-from dataclasses import dataclass
-from typing import Dict, Any, List
 import pulumi
 import pulumi_aws as aws
 
@@ -9,7 +5,6 @@ from src.services.infra import ServiceInfraContext, ServiceInfraOutput
 
 
 def provision_service_infra(ctx: ServiceInfraContext) -> ServiceInfraOutput:
-    """Provisions dedicated AWS Lambda, API Gateway Integration, and Routes for the Accounts microservice."""
     service_name = "accounts"
     name_prefix = f"{ctx.prefix}-{service_name}"
 
@@ -20,9 +15,7 @@ def provision_service_infra(ctx: ServiceInfraContext) -> ServiceInfraOutput:
         role=ctx.lambda_role_arn,
         package_type="Image",
         image_uri=ctx.get_image_uri(service_name),
-        image_config=aws.lambda_.FunctionImageConfigArgs(
-            commands=["src.services.accounts.lambda_handler.handler"]
-        ),
+        image_config=aws.lambda_.FunctionImageConfigArgs(commands=["src.services.accounts.lambda_handler.handler"]),
         memory_size=2048,
         timeout=60,
         ephemeral_storage=aws.lambda_.FunctionEphemeralStorageArgs(size=4096),

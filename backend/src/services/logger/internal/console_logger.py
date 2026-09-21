@@ -8,8 +8,15 @@ from src.services.logger.internal.base_logger import BaseLogger
 
 
 class ConsoleLogger(BaseLogger):
-    def __init__(self, name: str = "app", extra: Optional[Dict[str, Any]] = None, json_format: Optional[bool] = None):
-        super().__init__(name=name, extra=extra)
+    def __init__(
+        self,
+        name: str = "app",
+        extra: Optional[Dict[str, Any]] = None,
+        json_format: Optional[bool] = None,
+        service_name: Optional[str] = None,
+        **kwargs,
+    ):
+        super().__init__(name=name, extra=extra, service_name=service_name, **kwargs)
         self._json_format = json_format
 
     def _format(self, level: str, msg: str, **kwargs) -> str:
@@ -44,7 +51,12 @@ class ConsoleLogger(BaseLogger):
             self.info(f"<== [SPAN END] {name} (took {duration_ms:.2f}ms)", duration_ms=round(duration_ms, 2), **kwargs)
         except Exception as exc:
             duration_ms = (time.perf_counter() - start_time) * 1000
-            self.error(f"<== [SPAN FAILED] {name} after {duration_ms:.2f}ms: {exc}", duration_ms=round(duration_ms, 2), error=str(exc), **kwargs)
+            self.error(
+                f"<== [SPAN FAILED] {name} after {duration_ms:.2f}ms: {exc}",
+                duration_ms=round(duration_ms, 2),
+                error=str(exc),
+                **kwargs,
+            )
             raise
 
     def bind(self, **kwargs) -> "ConsoleLogger":

@@ -1,14 +1,15 @@
 import time
+
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
 from src.services.logger.context import (
     generate_trace_id,
-    set_current_trace_id,
-    reset_trace_id,
-    set_journey_context,
     reset_journey_context,
+    reset_trace_id,
+    set_current_trace_id,
+    set_journey_context,
 )
 from src.services.logger.logger_service import get_logger
 
@@ -27,7 +28,7 @@ class UserJourneyMiddleware(BaseHTTPMiddleware):
         trace_id = incoming_trace_id or generate_trace_id()
 
         trace_token = set_current_trace_id(trace_id)
-        
+
         client_ip = request.client.host if request.client else "unknown"
         user_agent = request.headers.get("user-agent", "unknown")
         path = request.url.path

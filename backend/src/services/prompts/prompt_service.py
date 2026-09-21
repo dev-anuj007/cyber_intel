@@ -1,21 +1,16 @@
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 
-from src.services.prompts.prompt_types import IPromptService, IPromptRepository
-from src.services.prompts.repositories.reader import LocalPromptRepository
-from src.services.prompts.repositories.dynamo_prompt import DynamoPromptRepository
-from src.services.prompts.templates import CANONICAL_PROMPTS_LIST, get_prompt_template
-from src.services.database import is_deployed
 from src.services.logger import get_logger
+from src.services.prompts.prompt_types import IPromptRepository, IPromptService
+from src.services.prompts.repositories.reader import LocalPromptRepository
+from src.services.prompts.templates import get_prompt_template
 
 logger = get_logger("services.prompts")
 
 
 class PromptService(IPromptService):
     def __init__(self, repository: Optional[IPromptRepository] = None):
-        if is_deployed():
-            self.repository = repository or DynamoPromptRepository()
-        else:
-            self.repository = repository or LocalPromptRepository()
+        self.repository = repository or LocalPromptRepository()
 
     def list_prompts(self) -> List[Dict[str, Any]]:
         with logger.span("prompts.list"):
@@ -45,6 +40,10 @@ class PromptService(IPromptService):
                 template=template,
                 prompt_type=prompt_type,
             )
+
+    def delete_prompt(self, name: str, version: str) -> bool:
+        with logger.span("prompts.delete", prompt_name=name, version=version):
+            return self.repository.delete_prompt(name=name, version=version)
 
 
 default_prompt_service = PromptService()

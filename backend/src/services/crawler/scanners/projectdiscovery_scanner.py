@@ -1,14 +1,15 @@
-import os
+import json
 import shutil
 import socket
 import ssl
-import json
 import subprocess
+from typing import Any, Dict, List, Optional, Set
+
 import httpx
-from typing import List, Dict, Any, Optional, Set
+
 from src.services.accounts.types import Asset, SecuritySignal, SignalSeverity
 from src.services.aggregator.aggregator_service import normalize_domain
-from src.services.crawler.scanners.base import IScanner, ScanResult
+from src.services.crawler.scanners.base import ScanResult
 from src.services.logger import get_logger
 
 logger = get_logger("crawler.scanners.projectdiscovery")
@@ -21,7 +22,7 @@ class ProjectDiscoveryScanner:
     display_name: str = "ProjectDiscovery Suite (Subfinder, HTTPX, Naabu, Nuclei)"
     description: str = "Fast perimeter reconnaissance, subdomain enumeration, port probing, technology stack fingerprinting, and Nuclei vulnerability template scanning."
 
-    def __init__(self, timeout: float = 2.0):
+    def __init__(self, timeout: float = 0.2):
         self.timeout = timeout
         self.has_subfinder = bool(shutil.which("subfinder"))
         self.has_naabu = bool(shutil.which("naabu"))
@@ -35,13 +36,15 @@ class ProjectDiscoveryScanner:
             ctx = ssl.create_default_context()
             ctx.check_hostname = False
             ctx.verify_mode = ssl.CERT_NONE
-            with socket.create_connection((domain, 443), timeout=1.5) as sock:
+            with socket.create_connection((domain, 443), timeout=0.2) as sock:
                 with ctx.wrap_socket(sock, server_hostname=domain) as ssock:
                     cert = ssock.getpeercert(binary_form=False)
                     if cert and "subjectAltName" in cert:
-                        for typ, val in cert["subjectAltName"]:
-                            if typ == "DNS" and (val.endswith(f".{domain}") or val == domain):
-                                sans.add(val.lower())
+                        for entry in cert["subjectAltName"]:
+                            if isinstance(entry, tuple) and len(entry) >= 2:
+                                typ, val = str(entry[0]), str(entry[1])
+                                if typ == "DNS" and (val.endswith(f".{domain}") or val == domain):
+                                    sans.add(val.lower())
         except Exception:
             pass
         return list(sans)
@@ -89,14 +92,14 @@ class ProjectDiscoveryScanner:
                 is_open = False
                 try:
                     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    sock.settimeout(0.6)
+                    sock.settimeout(0.05)
                     res = sock.connect_ex((ip, p))
                     sock.close()
-                    is_open = (res == 0)
+                    is_open = res == 0
                 except Exception:
                     pass
 
-                if is_open or p in (80, 443):
+                if is_open:
                     open_ports.add(p)
                     assets.append(Asset(ip=ip, port=p, hostname=h))
 
@@ -110,12 +113,14 @@ class ProjectDiscoveryScanner:
                                 evidence=f"Port {p} ({'SSH' if p == 22 else 'RDP'}) is exposed publicly on {h} ({ip}).",
                             )
                         )
-                        vulnerabilities.append({
-                            "id": f"NAABU-PORT-{p}",
-                            "name": "Administrative Port Exposed to Public Internet",
-                            "severity": "Critical",
-                            "port": p,
-                        })
+                        vulnerabilities.append(
+                            {
+                                "id": f"NAABU-PORT-{p}",
+                                "name": "Administrative Port Exposed to Public Internet",
+                                "severity": "Critical",
+                                "port": p,
+                            }
+                        )
                     elif p in (6379, 27017):
                         signals.append(
                             SecuritySignal(
@@ -158,23 +163,27 @@ class ProjectDiscoveryScanner:
                         signals.append(
                             SecuritySignal(
                                 name=f"Nuclei: {v_name}",
-                                severity=SignalSeverity(v_sev) if v_sev in SignalSeverity.__members__.values() else SignalSeverity.MEDIUM,
+                                severity=SignalSeverity(v_sev)
+                                if v_sev in SignalSeverity.__members__.values()
+                                else SignalSeverity.MEDIUM,
                                 category="vuln",
                                 evidence=f"Nuclei template matched on {vuln.get('matched-at', clean_domain)}",
                             )
                         )
-                        vulnerabilities.append({
-                            "id": vuln.get("template-id", "NUCLEI-GENERIC"),
-                            "name": v_name,
-                            "severity": v_sev.capitalize(),
-                        })
+                        vulnerabilities.append(
+                            {
+                                "id": vuln.get("template-id", "NUCLEI-GENERIC"),
+                                "name": v_name,
+                                "severity": v_sev.capitalize(),
+                            }
+                        )
                     except Exception:
                         pass
             except Exception as e:
                 logger.warning(f"Nuclei CLI execution: {e}")
 
-        if not assets:
-            root_ip = host_to_ip.get(clean_domain) or "0.0.0.0"
+        if not assets and clean_domain in host_to_ip:
+            root_ip = host_to_ip[clean_domain]
             assets.append(Asset(ip=root_ip, port=443, hostname=clean_domain))
             open_ports.add(443)
 
@@ -183,11 +192,11 @@ class ProjectDiscoveryScanner:
             scanner_type=self.scanner_type,
             assets=assets,
             signals=signals,
-            ips=list(host_to_ip.values()) or ["0.0.0.0"],
-            hostnames=discovered_subdomains,
+            ips=list(host_to_ip.values()),
+            hostnames=list(host_to_ip.keys()),
             ports=sorted(list(open_ports)),
-            products=list(products) or ["Web Infrastructure"],
-            cloud_providers=list(cloud_providers) or ["Public Cloud"],
+            products=list(products),
+            cloud_providers=list(cloud_providers),
             vulnerabilities=vulnerabilities,
             metadata={
                 "engine": "projectdiscovery_recon_suite",

@@ -1,68 +1,168 @@
-import sqlite3
+"""Scorer Data Reader Repository with SQLModel ORM."""
+
 import json
-from typing import Optional, List, Dict, Any
+from typing import Any, List, Optional
+
+from sqlmodel import Session, col, or_, select
+
+from src.services.database import get_db_session
+from src.services.scorer.repositories.models import AIScoreTable
 from src.services.scorer.types import IScoreReader
 
 
+def _get_session(conn: Any) -> Session:
+    return get_db_session(conn=conn)
+
+
+def _extract_base_domain(account_key: str) -> str:
+    clean = (account_key or "").strip()
+    if clean.startswith("domain:"):
+        clean = clean[7:]
+    parts = clean.split(":")
+    return parts[0].strip().lower()
+
+
 class ScoreReader(IScoreReader):
+    def get_latest_score(
+        self, conn: Any, account_key: str, version: Optional[str] = None
+    ) -> Optional[dict]:
+        base_dom = _extract_base_domain(account_key)
+        target_version = version
+        if not target_version and account_key.count(":") >= 2:
+            parts = account_key.split(":")
+            if parts[-1].startswith("v") and parts[-1][1:].isdigit():
+                target_version = parts[-1]
 
-    def get_latest_score(self, conn: sqlite3.Connection, account_key: str) -> Optional[dict]:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT id, account_key, version, score, priority_tier, key_risks,
-                   suggested_outreach, score_rationale, model_version, model_name,
-                   tokens_used, latency_ms, cost_usd, scored_at
-            FROM ai_scores
-            WHERE (account_key = ? OR account_key = ? OR account_key = ?) AND is_latest = 1
-            ORDER BY version DESC LIMIT 1
-            """,
-            (account_key, f"domain:{account_key}", account_key.replace("domain:", "")),
-        )
-        row = cursor.fetchone()
-        if not row:
-            return None
-        return self._format_ai_score_row(row)
+        with _get_session(conn) as session:
+            if target_version:
+                v_tag = target_version.lower()
+                candidate_keys = [f"domain:{base_dom}:{v_tag}", f"{base_dom}:{v_tag}"]
+                if v_tag == "v1":
+                    candidate_keys.extend([f"domain:{base_dom}", base_dom, f"domain:{base_dom}:v1", f"{base_dom}:v1"])
+                statement = (
+                    select(AIScoreTable)
+                    .where(
+                        col(AIScoreTable.account_key).in_(candidate_keys),
+                        AIScoreTable.is_latest == 1,
+                    )
+                    .order_by(col(AIScoreTable.version).desc(), col(AIScoreTable.id).desc())
+                    .limit(1)
+                )
+                row = session.exec(statement).first()
+                if not row:
+                    statement_fallback = (
+                        select(AIScoreTable)
+                        .where(col(AIScoreTable.account_key).in_(candidate_keys))
+                        .order_by(col(AIScoreTable.version).desc(), col(AIScoreTable.id).desc())
+                        .limit(1)
+                    )
+                    row = session.exec(statement_fallback).first()
+            else:
+                statement = (
+                    select(AIScoreTable)
+                    .where(
+                        or_(
+                            AIScoreTable.account_key == account_key,
+                            AIScoreTable.account_key == f"domain:{account_key}",
+                            AIScoreTable.account_key == account_key.replace("domain:", ""),
+                            AIScoreTable.account_key == f"domain:{base_dom}",
+                            AIScoreTable.account_key == base_dom,
+                            col(AIScoreTable.account_key).like(f"domain:{base_dom}:v%"),
+                            col(AIScoreTable.account_key).like(f"{base_dom}:v%"),
+                        ),
+                        AIScoreTable.is_latest == 1,
+                    )
+                    .order_by(col(AIScoreTable.version).desc(), col(AIScoreTable.id).desc())
+                    .limit(1)
+                )
+                row = session.exec(statement).first()
+                if not row:
+                    fallback = (
+                        select(AIScoreTable)
+                        .where(
+                            or_(
+                                AIScoreTable.account_key == account_key,
+                                AIScoreTable.account_key == f"domain:{account_key}",
+                                AIScoreTable.account_key == account_key.replace("domain:", ""),
+                                AIScoreTable.account_key == f"domain:{base_dom}",
+                                AIScoreTable.account_key == base_dom,
+                                col(AIScoreTable.account_key).like(f"domain:{base_dom}:v%"),
+                                col(AIScoreTable.account_key).like(f"{base_dom}:v%"),
+                            )
+                        )
+                        .order_by(col(AIScoreTable.version).desc(), col(AIScoreTable.id).desc())
+                        .limit(1)
+                    )
+                    row = session.exec(fallback).first()
 
-    def get_score_history(self, conn: sqlite3.Connection, account_key: str) -> List[dict]:
-        """Get complete chronological score version history for an account."""
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT id, account_key, version, score, priority_tier, key_risks,
-                   suggested_outreach, score_rationale, model_version, model_name,
-                   tokens_used, latency_ms, cost_usd, scored_at
-            FROM ai_scores
-            WHERE account_key = ? OR account_key = ? OR account_key = ?
-            ORDER BY version DESC
-            """,
-            (account_key, f"domain:{account_key}", account_key.replace("domain:", "")),
-        )
-        return [self._format_ai_score_row(r) for r in cursor.fetchall()]
+            if not row:
+                return None
+            return self._format_ai_score_model(row)
 
-    def _format_ai_score_row(self, row) -> dict:
+    def get_score_history(
+        self, conn: Any, account_key: str, version: Optional[str] = None
+    ) -> List[dict]:
+        """Get complete chronological score version history for an account or version."""
+        base_dom = _extract_base_domain(account_key)
+        target_version = version
+        if not target_version and account_key.count(":") >= 2:
+            parts = account_key.split(":")
+            if parts[-1].startswith("v") and parts[-1][1:].isdigit():
+                target_version = parts[-1]
+
+        with _get_session(conn) as session:
+            if target_version:
+                v_tag = target_version.lower()
+                candidate_keys = [f"domain:{base_dom}:{v_tag}", f"{base_dom}:{v_tag}"]
+                if v_tag == "v1":
+                    candidate_keys.extend([f"domain:{base_dom}", base_dom, f"domain:{base_dom}:v1", f"{base_dom}:v1"])
+                statement = (
+                    select(AIScoreTable)
+                    .where(col(AIScoreTable.account_key).in_(candidate_keys))
+                    .order_by(col(AIScoreTable.version).desc(), col(AIScoreTable.id).desc())
+                )
+            else:
+                statement = (
+                    select(AIScoreTable)
+                    .where(
+                        or_(
+                            AIScoreTable.account_key == account_key,
+                            AIScoreTable.account_key == f"domain:{account_key}",
+                            AIScoreTable.account_key == account_key.replace("domain:", ""),
+                            AIScoreTable.account_key == f"domain:{base_dom}",
+                            AIScoreTable.account_key == base_dom,
+                            col(AIScoreTable.account_key).like(f"domain:{base_dom}:v%"),
+                            col(AIScoreTable.account_key).like(f"{base_dom}:v%"),
+                        )
+                    )
+                    .order_by(col(AIScoreTable.version).desc(), col(AIScoreTable.id).desc())
+                )
+            rows = session.exec(statement).all()
+            return [self._format_ai_score_model(r) for r in rows]
+
+    def _format_ai_score_model(self, model: AIScoreTable) -> dict:
         try:
-            risks = json.loads(row[5]) if isinstance(row[5], str) else row[5]
+            risks = json.loads(model.key_risks) if isinstance(model.key_risks, str) else model.key_risks
         except Exception:
-            risks = [row[5]] if row[5] else []
+            risks = [model.key_risks] if model.key_risks else []
         try:
-            tokens = json.loads(row[10]) if isinstance(row[10], str) else row[10]
+            tokens = json.loads(model.tokens_used) if isinstance(model.tokens_used, str) else model.tokens_used
         except Exception:
             tokens = {}
 
         return {
-            "id": row[0],
-            "account_key": row[1],
-            "version": row[2],
-            "score": row[3],
-            "priority_tier": row[4],
+            "id": model.id,
+            "account_key": model.account_key,
+            "version": model.version,
+            "score": model.score,
+            "priority_tier": model.priority_tier,
             "key_risks": risks,
-            "suggested_outreach": row[6],
-            "score_rationale": row[7],
-            "model_version": row[8],
-            "model_name": row[9],
+            "suggested_outreach": model.suggested_outreach,
+            "score_rationale": model.score_rationale,
+            "model_version": model.model_version,
+            "model_name": model.model_name,
             "tokens_used": tokens,
-            "latency_ms": row[11],
-            "cost_usd": row[12],
-            "timestamp": row[13],
+            "latency_ms": model.latency_ms,
+            "cost_usd": model.cost_usd,
+            "timestamp": model.scored_at,
         }

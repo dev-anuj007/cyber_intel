@@ -1,0 +1,56 @@
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["src/services"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "--cov=src.services --cov-report=term-missing"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::ResourceWarning",
+    "ignore::Warning:logfire.*",
+    "ignore::Warning:google.*",
+    "ignore::UserWarning:httpx.*",
+    "ignore::UserWarning:starlette.*",
+    "ignore:.*FormattingFailedWarning.*",
+    "ignore:.*slated for removal.*",
+    "ignore:.*is deprecated.*",
+    "ignore:.*app.*shortcut is now deprecated.*",
+]
+
+[tool.coverage.run]
+source = ["src/services"]
+omit = [
+    "*/infra/*",
+    "*/lambda_handler.py",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+]
+
+[tool.pyright]
+extraPaths = ["."]
+
+[tool.black]
+line-length = 120
+target-version = ['py311']
+include = '\.pyi?$'
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[tool.isort]
+profile = "black"
+line_length = 120

@@ -1,10 +1,11 @@
 import socket
-import ssl
+from typing import Any, Dict, List, Optional, Set
+
 import httpx
-from typing import List, Dict, Any, Optional, Set
+
 from src.services.accounts.types import Asset, SecuritySignal, SignalSeverity
 from src.services.aggregator.aggregator_service import normalize_domain
-from src.services.crawler.scanners.base import IScanner, ScanResult
+from src.services.crawler.scanners.base import ScanResult
 from src.services.logger import get_logger
 
 logger = get_logger("crawler.scanners.cisa_kev")
@@ -92,9 +93,9 @@ class CisaKevScanner:
         try:
             ip = socket.gethostbyname(clean_domain)
         except Exception:
-            ip = "0.0.0.0"
+            ip = None
 
-        assets: List[Asset] = [Asset(ip=ip, port=443, hostname=clean_domain)]
+        assets: List[Asset] = [Asset(ip=ip, port=443, hostname=clean_domain)] if ip else []
         signals: List[SecuritySignal] = []
         products: Set[str] = set()
         cloud_providers: Set[str] = set()
@@ -117,6 +118,10 @@ class CisaKevScanner:
                     resp = client.get(f"http://{clean_domain}", headers={"User-Agent": "CISA-KEV-Threat-Audit/1.0"})
                     headers_str = " ".join([f"{k}:{v}" for k, v in resp.headers.items()]).lower()
                     all_text_fingerprints.append(headers_str)
+                    all_text_fingerprints.append(resp.text[:2000].lower())
+                    srv = resp.headers.get("server", "")
+                    if srv:
+                        products.add(srv)
                 except Exception:
                     pass
 
@@ -134,25 +139,27 @@ class CisaKevScanner:
                         evidence=f"Perimeter product matches CISA KEV signature for {rule['vendor']} {rule['product']}. Known exploited in the wild.",
                     )
                 )
-                vulnerabilities.append({
-                    "id": rule["cve"],
-                    "name": rule["name"],
-                    "vendor": rule["vendor"],
-                    "product": rule["product"],
-                    "severity": rule["severity"].value.capitalize(),
-                    "source": "CISA Known Exploited Vulnerabilities Catalog",
-                })
+                vulnerabilities.append(
+                    {
+                        "id": rule["cve"],
+                        "name": rule["name"],
+                        "vendor": rule["vendor"],
+                        "product": rule["product"],
+                        "severity": rule["severity"].value.capitalize(),
+                        "source": "CISA Known Exploited Vulnerabilities Catalog",
+                    }
+                )
 
         return ScanResult(
             domain=clean_domain,
             scanner_type=self.scanner_type,
             assets=assets,
             signals=signals,
-            ips=[ip],
-            hostnames=[clean_domain],
-            ports=[443],
-            products=list(products) or ["Cloud Service"],
-            cloud_providers=list(cloud_providers) or ["External Host"],
+            ips=[ip] if ip else [],
+            hostnames=[clean_domain] if ip else [],
+            ports=[443] if ip else [],
+            products=list(products),
+            cloud_providers=list(cloud_providers),
             vulnerabilities=vulnerabilities,
             cves=matched_cves,
             metadata={

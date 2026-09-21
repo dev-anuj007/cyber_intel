@@ -1,10 +1,12 @@
 import json
 import os
-from typing import Dict, Any, Optional
+from typing import Dict
+
 import pulumi
 import pulumi_aws as aws
 
 from .contracts import ServiceInfraContext, SharedInfraOutput
+from .ec2_postgres import provision_ec2_postgres
 
 SERVICES = ["gateway", "database", "accounts", "auth", "scorer", "crawler", "eval", "jobs"]
 
@@ -16,19 +18,21 @@ def provision_shared_infra() -> SharedInfraOutput:
     environment = config.get("environment") or "dev"
     gemini_model = config.get("geminiModel") or "gemini-3.1-flash-lite"
     gemini_api_key = config.get_secret("geminiApiKey") or os.environ.get("GEMINI_API_KEY") or ""
-    jwt_secret = config.get_secret("jwtSecret") or os.environ.get("JWT_SECRET") or "super-secret-sales-intel-jwt-key-2026"
+    jwt_secret = (
+        config.get_secret("jwtSecret") or os.environ.get("JWT_SECRET") or "super-secret-sales-intel-jwt-key-2026"
+    )
     logfire_token = config.get_secret("logfireToken") or os.environ.get("LOGFIRE_TOKEN") or ""
 
     prefix = f"{app_name}-{environment}"
     current_region = aws.get_region()
     current_account = aws.get_caller_identity()
 
-    # 1. Amazon S3 Database Bucket (Direct accounts.db storage)
+    # 1. Amazon S3 Artifacts Bucket
     database_bucket = aws.s3.BucketV2(
         f"{prefix}-database-bucket",
         bucket=f"{prefix}-db-{current_region.name}-{current_account.account_id}",
         force_destroy=True,
-        tags={"Environment": environment, "App": app_name, "Tier": "Database"},
+        tags={"Environment": environment, "App": app_name, "Tier": "Storage"},
     )
 
     aws.s3.BucketServerSideEncryptionConfigurationV2(
@@ -43,7 +47,7 @@ def provision_shared_infra() -> SharedInfraOutput:
         ],
     )
 
-    database_s3_uri = database_bucket.id.apply(lambda b: f"s3://{b}/accounts.db")
+    database_s3_uri = database_bucket.id.apply(lambda b: f"s3://{b}/artifacts")
 
     # 2. Dedicated Amazon ECR Repositories per Microservice
     ecr_repo_urls: Dict[str, pulumi.Output[str]] = {}
@@ -62,9 +66,7 @@ def provision_shared_infra() -> SharedInfraOutput:
                 name=repo_name,
                 image_tag_mutability="MUTABLE",
                 force_delete=True,
-                image_scanning_configuration=aws.ecr.RepositoryImageScanningConfigurationArgs(
-                    scan_on_push=False
-                ),
+                image_scanning_configuration=aws.ecr.RepositoryImageScanningConfigurationArgs(scan_on_push=False),
                 tags={"Environment": environment, "App": app_name, "Service": svc},
             )
             ecr_repo_urls[svc] = repo.repository_url
@@ -73,159 +75,59 @@ def provision_shared_infra() -> SharedInfraOutput:
     # Fallback backend image URI (maps to gateway)
     backend_image_uri = service_image_uris.get("gateway", list(service_image_uris.values())[0])
 
-    # 3. Amazon DynamoDB Tables (Hybrid Dynamic Layer)
-    users_table = aws.dynamodb.Table(
-        f"{prefix}-users",
-        name=f"{prefix}-users",
-        billing_mode="PAY_PER_REQUEST",
-        hash_key="email",
-        attributes=[
-            aws.dynamodb.TableAttributeArgs(name="email", type="S"),
-            aws.dynamodb.TableAttributeArgs(name="id", type="S"),
-        ],
-        global_secondary_indexes=[
-            aws.dynamodb.TableGlobalSecondaryIndexArgs(
-                name="UserIdIndex",
-                hash_key="id",
-                projection_type="ALL",
-            )
-        ],
-    )
-
-    scores_table = aws.dynamodb.Table(
-        f"{prefix}-ai-scores",
-        name=f"{prefix}-ai-scores",
-        billing_mode="PAY_PER_REQUEST",
-        hash_key="account_key",
-        range_key="created_at",
-        attributes=[
-            aws.dynamodb.TableAttributeArgs(name="account_key", type="S"),
-            aws.dynamodb.TableAttributeArgs(name="created_at", type="S"),
-        ],
-    )
-
-    jobs_table = aws.dynamodb.Table(
-        f"{prefix}-jobs",
-        name=f"{prefix}-jobs",
-        billing_mode="PAY_PER_REQUEST",
-        hash_key="job_id",
-        attributes=[
-            aws.dynamodb.TableAttributeArgs(name="job_id", type="S"),
-        ],
-    )
-
-    crawled_table = aws.dynamodb.Table(
-        f"{prefix}-crawled-accounts",
-        name=f"{prefix}-crawled-accounts",
-        billing_mode="PAY_PER_REQUEST",
-        hash_key="account_key",
-        attributes=[
-            aws.dynamodb.TableAttributeArgs(name="account_key", type="S"),
-        ],
-    )
-
-    eval_runs_table = aws.dynamodb.Table(
-        f"{prefix}-eval-runs",
-        name=f"{prefix}-eval-runs",
-        billing_mode="PAY_PER_REQUEST",
-        hash_key="run_id",
-        attributes=[
-            aws.dynamodb.TableAttributeArgs(name="run_id", type="S"),
-        ],
-    )
-
-    prompts_table = aws.dynamodb.Table(
-        f"{prefix}-prompts",
-        name=f"{prefix}-prompts",
-        billing_mode="PAY_PER_REQUEST",
-        hash_key="name",
-        range_key="version",
-        attributes=[
-            aws.dynamodb.TableAttributeArgs(name="name", type="S"),
-            aws.dynamodb.TableAttributeArgs(name="version", type="S"),
-        ],
-    )
-
-    # 4. IAM Execution Role for Lambda Microservices
+    # 3. IAM Role for Lambda Microservices
     lambda_role = aws.iam.Role(
         f"{prefix}-lambda-role",
-        name=f"{prefix}-lambda-role",
-        assume_role_policy=json.dumps({
-            "Version": "2012-10-17",
-            "Statement": [{
-                "Effect": "Allow",
-                "Principal": {"Service": "lambda.amazonaws.com"},
-                "Action": "sts:AssumeRole"
-            }]
-        }),
-        managed_policy_arns=[
-            "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
-        ],
-        tags={"Environment": environment, "App": app_name},
-    )
-
-    # S3 & DynamoDB Access Policy for Database Bucket & Tables
-    aws.iam.RolePolicy(
-        f"{prefix}-lambda-storage-policy",
-        role=lambda_role.id,
-        policy=pulumi.Output.all(
-            database_bucket.arn,
-            users_table.arn,
-            scores_table.arn,
-            jobs_table.arn,
-            crawled_table.arn,
-            eval_runs_table.arn,
-            prompts_table.arn,
-        ).apply(
-            lambda args: json.dumps({
+        assume_role_policy=json.dumps(
+            {
                 "Version": "2012-10-17",
                 "Statement": [
                     {
+                        "Action": "sts:AssumeRole",
                         "Effect": "Allow",
-                        "Action": [
-                            "s3:GetObject",
-                            "s3:PutObject",
-                            "s3:ListBucket",
-                            "s3:HeadObject"
-                        ],
-                        "Resource": [
-                            args[0],
-                            f"{args[0]}/*"
-                        ]
-                    },
-                    {
-                        "Effect": "Allow",
-                        "Action": [
-                            "dynamodb:GetItem",
-                            "dynamodb:PutItem",
-                            "dynamodb:UpdateItem",
-                            "dynamodb:DeleteItem",
-                            "dynamodb:Query",
-                            "dynamodb:Scan",
-                            "dynamodb:BatchGetItem",
-                            "dynamodb:BatchWriteItem"
-                        ],
-                        "Resource": [
-                            args[1],
-                            f"{args[1]}/*",
-                            args[2],
-                            f"{args[2]}/*",
-                            args[3],
-                            f"{args[3]}/*",
-                            args[4],
-                            f"{args[4]}/*",
-                            args[5],
-                            f"{args[5]}/*",
-                            args[6],
-                            f"{args[6]}/*",
-                        ]
+                        "Principal": {"Service": "lambda.amazonaws.com"},
                     }
-                ]
-            })
+                ],
+            }
+        ),
+        tags={"Environment": environment, "App": app_name},
+    )
+
+    aws.iam.RolePolicyAttachment(
+        f"{prefix}-lambda-basic-exec",
+        role=lambda_role.name,
+        policy_arn="arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+    )
+
+    aws.iam.RolePolicy(
+        f"{prefix}-lambda-policy",
+        role=lambda_role.id,
+        policy=database_bucket.arn.apply(
+            lambda bucket_arn: json.dumps(
+                {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "s3:GetObject",
+                                "s3:PutObject",
+                                "s3:ListBucket",
+                            ],
+                            "Resource": [bucket_arn, f"{bucket_arn}/*"],
+                        },
+                        {
+                            "Effect": "Allow",
+                            "Action": ["lambda:InvokeFunction"],
+                            "Resource": ["arn:aws:lambda:*:*:function:sales-intel-*"],
+                        },
+                    ],
+                }
+            )
         ),
     )
 
-    # 5. Central Amazon API Gateway HTTP API v2
+    # 4. Central Amazon API Gateway HTTP API v2
     http_api = aws.apigatewayv2.Api(
         f"{prefix}-http-api",
         name=f"{prefix}-api",
@@ -245,18 +147,23 @@ def provision_shared_infra() -> SharedInfraOutput:
         auto_deploy=True,
     )
 
+    # 5. Dedicated EC2 PostgreSQL Database Instance
+    enable_ec2_postgres = config.get_bool("enableEc2Postgres") if config.get_bool("enableEc2Postgres") is not None else True
+    if enable_ec2_postgres:
+        ec2_pg = provision_ec2_postgres(prefix=prefix, environment=environment)
+        pg_db_url = ec2_pg.database_url
+        pg_instance = ec2_pg.instance
+    else:
+        pg_db_url = pulumi.Output.from_input("")
+        pg_instance = None
+
     # 6. Common Environment Variables
     def _create_env_map(
         s3_uri: str,
         g_key: str,
         j_secret: str,
         lf_token: str,
-        u_tbl: str,
-        s_tbl: str,
-        j_tbl: str,
-        c_tbl: str,
-        e_tbl: str,
-        p_tbl: str,
+        db_url: str,
     ) -> Dict[str, str]:
         env_map = {
             "ENVIRONMENT": environment,
@@ -264,13 +171,9 @@ def provision_shared_infra() -> SharedInfraOutput:
             "GEMINI_MODEL": gemini_model,
             "JWT_SECRET": j_secret,
             "LOG_LEVEL": "INFO",
-            "DYNAMODB_USERS_TABLE": u_tbl,
-            "DYNAMODB_SCORES_TABLE": s_tbl,
-            "DYNAMODB_JOBS_TABLE": j_tbl,
-            "DYNAMODB_CRAWLED_TABLE": c_tbl,
-            "DYNAMODB_EVAL_RUNS_TABLE": e_tbl,
-            "DYNAMODB_PROMPTS_TABLE": p_tbl,
         }
+        if db_url:
+            env_map["DATABASE_URL"] = db_url
         if g_key:
             env_map["GEMINI_API_KEY"] = g_key
         if lf_token:
@@ -282,15 +185,10 @@ def provision_shared_infra() -> SharedInfraOutput:
         gemini_api_key,
         jwt_secret,
         logfire_token,
-        users_table.name,
-        scores_table.name,
-        jobs_table.name,
-        crawled_table.name,
-        eval_runs_table.name,
-        prompts_table.name,
+        pg_db_url,
     ).apply(
         lambda args: _create_env_map(
-            args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9]
+            args[0], args[1], args[2], args[3], args[4]
         )
     )
 
@@ -320,4 +218,6 @@ def provision_shared_infra() -> SharedInfraOutput:
         http_api=http_api,
         api_stage=api_stage,
         service_context=service_context,
+        database_url=pg_db_url,
+        postgres_instance=pg_instance,
     )

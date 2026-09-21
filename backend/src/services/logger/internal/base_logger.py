@@ -7,8 +7,8 @@ from typing import Any, Dict, Optional
 
 from src.services.logger.context import (
     get_current_trace_id,
-    set_current_trace_id,
     get_journey_context,
+    set_current_trace_id,
 )
 
 
@@ -32,8 +32,10 @@ class BaseLogger(ABC):
         "EXCEPTION": BOLD + RED,
     }
 
-    def __init__(self, name: str = "app", extra: Optional[Dict[str, Any]] = None):
-        self.name = name
+    def __init__(
+        self, name: str = "app", extra: Optional[Dict[str, Any]] = None, service_name: Optional[str] = None, **kwargs
+    ):
+        self.name = service_name or name or "app"
         self.extra = extra or {}
 
     @abstractmethod
@@ -97,11 +99,7 @@ class BaseLogger(ABC):
         }
 
     def format_message(self, level: str, msg: str, json_format: Optional[bool] = None, **kwargs) -> str:
-        use_json = (
-            json_format
-            if json_format is not None
-            else os.getenv("LOG_FORMAT", "text").lower() == "json"
-        )
+        use_json = json_format if json_format is not None else os.getenv("LOG_FORMAT", "text").lower() == "json"
         record = self.build_structured_record(level, msg, **kwargs)
 
         if use_json:

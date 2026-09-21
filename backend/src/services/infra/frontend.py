@@ -8,7 +8,7 @@ Responsible for:
 """
 
 import json
-from typing import Optional
+
 import pulumi
 import pulumi_aws as aws
 
@@ -33,12 +33,8 @@ def provision_frontend_infra(prefix: str, environment: str, app_name: str) -> Fr
     frontend_website = aws.s3.BucketWebsiteConfigurationV2(
         f"{prefix}-frontend-website",
         bucket=frontend_bucket.id,
-        index_document=aws.s3.BucketWebsiteConfigurationV2IndexDocumentArgs(
-            suffix="index.html"
-        ),
-        error_document=aws.s3.BucketWebsiteConfigurationV2ErrorDocumentArgs(
-            key="index.html"
-        ),
+        index_document=aws.s3.BucketWebsiteConfigurationV2IndexDocumentArgs(suffix="index.html"),
+        error_document=aws.s3.BucketWebsiteConfigurationV2ErrorDocumentArgs(key="index.html"),
     )
 
     # 3. S3 Bucket Public Access Block
@@ -56,16 +52,20 @@ def provision_frontend_infra(prefix: str, environment: str, app_name: str) -> Fr
         f"{prefix}-frontend-policy",
         bucket=frontend_bucket.id,
         policy=frontend_bucket.arn.apply(
-            lambda arn: json.dumps({
-                "Version": "2012-10-17",
-                "Statement": [{
-                    "Sid": "PublicReadGetObject",
-                    "Effect": "Allow",
-                    "Principal": "*",
-                    "Action": "s3:GetObject",
-                    "Resource": f"{arn}/*"
-                }]
-            })
+            lambda arn: json.dumps(
+                {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Sid": "PublicReadGetObject",
+                            "Effect": "Allow",
+                            "Principal": "*",
+                            "Action": "s3:GetObject",
+                            "Resource": f"{arn}/*",
+                        }
+                    ],
+                }
+            )
         ),
         opts=pulumi.ResourceOptions(depends_on=[frontend_public_access]),
     )

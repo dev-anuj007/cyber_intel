@@ -329,6 +329,17 @@
   border-color: rgba(168, 85, 247, 0.35);
 }
 
+.domain-multi-versions-badge {
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(99, 102, 241, 0.12);
+  color: #a5b4fc;
+  border: 1px dashed rgba(99, 102, 241, 0.4);
+  white-space: nowrap;
+}
+
 
 /* Interactive Table Cells with Tab Deep-Linking */
 .modern-accounts-table td.interactive-cell {

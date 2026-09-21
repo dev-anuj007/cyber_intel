@@ -1,11 +1,12 @@
 import concurrent.futures
-from typing import Dict, Type, List, Any, Optional, Set
+from typing import Any, Dict, List, Optional, Set
+
 from src.services.accounts.types import Asset, SecuritySignal
-from src.services.crawler.scanners.base import IScanner, ScanResult
-from src.services.crawler.scanners.standard_scanner import StandardCrawlerScanner
+from src.services.crawler.scanners.base import ScanResult
+from src.services.crawler.scanners.cisa_kev_scanner import CisaKevScanner
 from src.services.crawler.scanners.owasp_zap_scanner import OwaspZapScanner
 from src.services.crawler.scanners.projectdiscovery_scanner import ProjectDiscoveryScanner
-from src.services.crawler.scanners.cisa_kev_scanner import CisaKevScanner
+from src.services.crawler.scanners.standard_scanner import StandardCrawlerScanner
 from src.services.logger import get_logger
 
 logger = get_logger("crawler.scanners.factory")
@@ -44,15 +45,25 @@ class ScannerFactory:
         ]
         for key, s_cls in cls._registry.items():
             instance = s_cls()
-            icon = "🌐" if key == "standard" else "🛡️" if key == "owasp_zap" else "⚡" if key == "projectdiscovery" else "🚨"
+            icon = (
+                "🌐"
+                if key == "standard"
+                else "🛡️"
+                if key == "owasp_zap"
+                else "⚡"
+                if key == "projectdiscovery"
+                else "🚨"
+            )
             badge = "Active"
-            result.append({
-                "id": key,
-                "name": instance.display_name,
-                "description": instance.description,
-                "badge": badge,
-                "icon": icon,
-            })
+            result.append(
+                {
+                    "id": key,
+                    "name": instance.display_name,
+                    "description": instance.description,
+                    "badge": badge,
+                    "icon": icon,
+                }
+            )
         return result
 
     @classmethod
@@ -117,11 +128,11 @@ class ScannerFactory:
             scanner_type="all",
             assets=merged_assets,
             signals=merged_signals,
-            ips=list(merged_ips) or ["0.0.0.0"],
-            hostnames=list(merged_hostnames) or [domain],
+            ips=list(merged_ips),
+            hostnames=list(merged_hostnames),
             ports=sorted(list(merged_ports)),
-            products=list(merged_products) or ["Web Service"],
-            cloud_providers=list(merged_cloud_providers) or ["Public Cloud"],
+            products=list(merged_products),
+            cloud_providers=list(merged_cloud_providers),
             vulnerabilities=merged_vulnerabilities,
             cves=list(merged_cves),
             metadata={

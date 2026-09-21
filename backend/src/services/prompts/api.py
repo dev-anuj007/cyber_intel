@@ -1,15 +1,15 @@
 from typing import Optional
+
 from fastapi import APIRouter, Depends
 
 from src.core.exceptions import (
-    AuthenticationError,
     InvalidInputError,
     NotFoundError,
 )
-from src.services.prompts.prompt_types import PromptRegisterRequest
-from src.services.prompts.prompt_service import PromptService, default_prompt_service
 from src.services.auth.api import get_current_user_optional
 from src.services.logger import get_logger
+from src.services.prompts.prompt_service import PromptService, default_prompt_service
+from src.services.prompts.prompt_types import PromptRegisterRequest
 
 logger = get_logger("prompts.api")
 
@@ -55,3 +55,23 @@ def register_prompt(
         template=req.template,
         prompt_type=req.prompt_type,
     )
+
+
+@router.delete("/{name}/{version}")
+def delete_prompt(
+    name: str,
+    version: str,
+    current_user: Optional[dict] = Depends(get_current_user_optional),
+    prompt_service: PromptService = Depends(get_prompt_service),
+):
+    # Guard against deleting core canonical prompts
+    if version in ["v1.0", "v2.0"] and (name == "account_scoring" or not name):
+        raise InvalidInputError(
+            message="Cannot delete built-in canonical prompt versions (v1.0, v2.0)",
+            code="CANNOT_DELETE_CANONICAL_PROMPT",
+        )
+
+    success = prompt_service.delete_prompt(name=name, version=version)
+    if not success:
+        raise NotFoundError(message=f"Prompt '{name}:{version}' not found", code="PROMPT_NOT_FOUND")
+    return {"success": True, "message": f"Prompt '{name}:{version}' deleted successfully"}

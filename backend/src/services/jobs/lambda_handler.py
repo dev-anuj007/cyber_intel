@@ -7,11 +7,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
 
-from src.services.jobs.api import router as jobs_router
-from src.services.jobs import default_jobs_service
-from src.core.error_handlers import register_error_handlers
-from src.services.logger import get_logger, UserJourneyMiddleware
 from src.core.config import LOGFIRE_TOKEN
+from src.core.error_handlers import register_error_handlers
+from src.services.jobs import default_jobs_service
+from src.services.jobs.api import router as jobs_router
+from src.services.logger import UserJourneyMiddleware, get_logger
 
 logger = get_logger("services.jobs.lambda")
 
@@ -35,6 +35,7 @@ app.add_middleware(UserJourneyMiddleware)
 if LOGFIRE_TOKEN:
     try:
         import logfire
+
         logfire.instrument_fastapi(app)
     except Exception:
         pass
@@ -56,4 +57,14 @@ def health():
     return {"status": "ok", "service": "jobs-microservice"}
 
 
-handler = Mangum(app, lifespan="off")
+_mangum_handler = Mangum(app, lifespan="off")
+
+
+def handler(event, context):
+    if isinstance(event, dict) and ("job_id" in event or event.get("action") == "execute_job"):
+        job_id = event.get("job_id")
+        if job_id:
+            logger.info(f"Executing background job {job_id} via async Lambda event", job_id=str(job_id))
+            default_jobs_service.execute_job(str(job_id))
+            return {"status": "completed", "job_id": str(job_id)}
+    return _mangum_handler(event, context)

@@ -1,271 +1,210 @@
+"""Jobs Data Repository with SQLModel ORM."""
+
 import json
 from datetime import datetime, timezone
-from typing import List, Dict, Any, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
+from sqlmodel import Session, col, func, select
+
+from src.services.database import default_database_service
+from src.services.database.database_service import DatabaseService
+from src.services.jobs.repositories.models import BackgroundJobTable
 
 
 class JobsRepository:
+    def __init__(self, db_path: Optional[Any] = None, **kwargs: Any):
+        self.db_path = db_path
+        self._local_db_service = DatabaseService(db_path=db_path) if db_path is not None else None
+
+    def _get_session(self, conn: Optional[Any] = None) -> Session:
+        svc = self._local_db_service if self._local_db_service is not None else default_database_service
+        return svc.get_session(conn)
+
     def create_job(
         self,
-        conn,
-        job_id: str,
-        job_type: str,
-        title: str,
-        payload: Dict[str, Any],
+        conn: Optional[Any] = None,
+        job_id: str = "",
+        job_type: str = "general",
+        title: str = "",
+        payload: Optional[Dict[str, Any]] = None,
         progress_total: int = 1,
-        user_id: Optional[int] = None,
+        user_id: Optional[Any] = None,
         max_retries: int = 3,
         trace_id: Optional[str] = None,
+        **kwargs: Any,
     ) -> str:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            INSERT INTO background_jobs (
-                job_id,
-                job_type,
-                title,
-                user_id,
-                status,
-                progress_current,
-                progress_total,
-                retry_count,
-                max_retries,
-                payload_json,
-                results_json,
-                metadata_json,
-                trace_id,
-                created_at
-            ) VALUES (?, ?, ?, ?, 'queued', 0, ?, 0, ?, ?, 'null', '{}', ?, CURRENT_TIMESTAMP)
-            """,
-            (
-                job_id,
-                job_type,
-                title,
-                user_id,
-                progress_total,
-                max_retries,
-                json.dumps(payload),
-                trace_id,
-            ),
-        )
-        return job_id
+        with self._get_session(conn) as session:
+            job = BackgroundJobTable(
+                job_id=job_id,
+                job_type=job_type,
+                title=title,
+                user_id=int(user_id) if user_id is not None and str(user_id).isdigit() else None,
+                status="queued",
+                progress_current=0,
+                progress_total=progress_total,
+                retry_count=0,
+                max_retries=max_retries,
+                payload_json=json.dumps(payload or {}),
+                results_json="null",
+                metadata_json="{}",
+                trace_id=trace_id,
+                created_at=datetime.now(timezone.utc).isoformat(),
+            )
+            session.add(job)
+            session.commit()
+            return job_id
 
-    def get_job(self, conn, job_id: str) -> Optional[Dict[str, Any]]:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT
-                id,
-                job_id,
-                job_type,
-                title,
-                user_id,
-                status,
-                progress_current,
-                progress_total,
-                retry_count,
-                max_retries,
-                payload_json,
-                results_json,
-                metadata_json,
-                error_message,
-                trace_id,
-                created_at,
-                started_at,
-                completed_at
-            FROM background_jobs
-            WHERE job_id = ?
-            """,
-            (job_id,),
-        )
-        row = cursor.fetchone()
-        if not row:
-            return None
-
-        return self._map_row(row)
+    def get_job(self, conn: Optional[Any] = None, job_id: str = "") -> Optional[Dict[str, Any]]:
+        with self._get_session(conn) as session:
+            statement = select(BackgroundJobTable).where(BackgroundJobTable.job_id == job_id)
+            job = session.exec(statement).first()
+            if not job:
+                return None
+            return self._map_model(job)
 
     def list_jobs(
         self,
-        conn,
+        conn: Optional[Any] = None,
         skip: int = 0,
         limit: int = 20,
         job_type: Optional[str] = None,
         status: Optional[str] = None,
     ) -> Tuple[List[Dict[str, Any]], int]:
-        cursor = conn.cursor()
-        where_clauses = []
-        params: List[Any] = []
+        with self._get_session(conn) as session:
+            query = select(BackgroundJobTable)
+            count_query = select(func.count()).select_from(BackgroundJobTable)
 
-        if job_type:
-            where_clauses.append("job_type = ?")
-            params.append(job_type)
-        if status:
-            where_clauses.append("status = ?")
-            params.append(status)
+            if job_type:
+                query = query.where(BackgroundJobTable.job_type == job_type)
+                count_query = count_query.where(BackgroundJobTable.job_type == job_type)
+            if status:
+                query = query.where(BackgroundJobTable.status == status)
+                count_query = count_query.where(BackgroundJobTable.status == status)
 
-        where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+            total = session.exec(count_query).one() or 0
 
-        cursor.execute(f"SELECT COUNT(*) FROM background_jobs {where_sql}", tuple(params))
-        total = cursor.fetchone()[0]
+            query = (
+                query.order_by(col(BackgroundJobTable.created_at).desc(), col(BackgroundJobTable.id).desc())
+                .offset(skip)
+                .limit(limit)
+            )
+            rows = session.exec(query).all()
+            items = [self._map_model(r) for r in rows]
+            return items, int(total)
 
-        query = f"""
-            SELECT
-                id,
-                job_id,
-                job_type,
-                title,
-                user_id,
-                status,
-                progress_current,
-                progress_total,
-                retry_count,
-                max_retries,
-                payload_json,
-                results_json,
-                metadata_json,
-                error_message,
-                trace_id,
-                created_at,
-                started_at,
-                completed_at
-            FROM background_jobs
-            {where_sql}
-            ORDER BY created_at DESC, id DESC
-            LIMIT ? OFFSET ?
-        """
-        exec_params = list(params) + [limit, skip]
-        cursor.execute(query, tuple(exec_params))
-        rows = cursor.fetchall()
-        items = [self._map_row(r) for r in rows]
-        return items, total
+    def start_job(self, conn: Optional[Any] = None, job_id: str = "") -> None:
+        with self._get_session(conn) as session:
+            job = session.exec(select(BackgroundJobTable).where(BackgroundJobTable.job_id == job_id)).first()
+            if job:
+                job.status = "running"
+                if not job.started_at:
+                    job.started_at = datetime.now(timezone.utc).isoformat()
+                session.add(job)
+                session.commit()
 
-    def start_job(self, conn, job_id: str) -> None:
-        cursor = conn.cursor()
-        now_str = datetime.now(timezone.utc).isoformat()
-        cursor.execute(
-            """
-            UPDATE background_jobs
-            SET status = 'running', started_at = COALESCE(started_at, ?)
-            WHERE job_id = ?
-            """,
-            (now_str, job_id),
-        )
+    def update_status(self, conn: Optional[Any] = None, job_id: str = "", status: Any = "") -> None:
+        st_val = status.value if hasattr(status, "value") else str(status)
+        with self._get_session(conn) as session:
+            job = session.exec(select(BackgroundJobTable).where(BackgroundJobTable.job_id == job_id)).first()
+            if job:
+                job.status = st_val
+                if st_val == "completed":
+                    job.completed_at = datetime.now(timezone.utc).isoformat()
+                session.add(job)
+                session.commit()
 
     def update_progress(
         self,
-        conn,
-        job_id: str,
-        current: int,
-        total: int,
+        conn: Optional[Any] = None,
+        job_id: str = "",
+        current: int = 0,
+        total: int = 1,
         metadata: Optional[Dict[str, Any]] = None,
         partial_results: Optional[Any] = None,
     ) -> None:
-        cursor = conn.cursor()
-        sql_parts = ["progress_current = ?", "progress_total = ?"]
-        params = [current, total]
-
-        if metadata is not None:
-            sql_parts.append("metadata_json = ?")
-            params.append(json.dumps(metadata))
-
-        if partial_results is not None:
-            sql_parts.append("results_json = ?")
-            params.append(json.dumps(partial_results))
-
-        params.append(job_id)
-        cursor.execute(
-            f"UPDATE background_jobs SET {', '.join(sql_parts)} WHERE job_id = ?",
-            tuple(params),
-        )
+        with self._get_session(conn) as session:
+            job = session.exec(select(BackgroundJobTable).where(BackgroundJobTable.job_id == job_id)).first()
+            if job:
+                job.progress_current = current
+                job.progress_total = total
+                if metadata is not None:
+                    job.metadata_json = json.dumps(metadata)
+                if partial_results is not None:
+                    job.results_json = json.dumps(partial_results)
+                session.add(job)
+                session.commit()
 
     def complete_job(
         self,
-        conn,
-        job_id: str,
-        results: Any,
+        conn: Optional[Any] = None,
+        job_id: str = "",
+        results: Any = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
-        cursor = conn.cursor()
-        now_str = datetime.now(timezone.utc).isoformat()
-        cursor.execute(
-            """
-            UPDATE background_jobs
-            SET
-                status = 'completed',
-                progress_current = progress_total,
-                results_json = ?,
-                metadata_json = COALESCE(?, metadata_json),
-                completed_at = ?
-            WHERE job_id = ?
-            """,
-            (
-                json.dumps(results),
-                json.dumps(metadata) if metadata is not None else None,
-                now_str,
-                job_id,
-            ),
-        )
+        with self._get_session(conn) as session:
+            job = session.exec(select(BackgroundJobTable).where(BackgroundJobTable.job_id == job_id)).first()
+            if job:
+                job.status = "completed"
+                job.progress_current = job.progress_total
+                job.results_json = json.dumps(results)
+                if metadata is not None:
+                    job.metadata_json = json.dumps(metadata)
+                job.completed_at = datetime.now(timezone.utc).isoformat()
+                session.add(job)
+                session.commit()
 
-    def fail_job(self, conn, job_id: str, error_message: str) -> None:
-        cursor = conn.cursor()
-        now_str = datetime.now(timezone.utc).isoformat()
-        cursor.execute(
-            """
-            UPDATE background_jobs
-            SET status = 'failed', error_message = ?, completed_at = ?
-            WHERE job_id = ?
-            """,
-            (error_message, now_str, job_id),
-        )
+    def fail_job(self, conn: Optional[Any] = None, job_id: str = "", error_message: str = "") -> None:
+        with self._get_session(conn) as session:
+            job = session.exec(select(BackgroundJobTable).where(BackgroundJobTable.job_id == job_id)).first()
+            if job:
+                job.status = "failed"
+                job.error_message = error_message
+                job.completed_at = datetime.now(timezone.utc).isoformat()
+                session.add(job)
+                session.commit()
 
-    def increment_retry(self, conn, job_id: str) -> int:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            UPDATE background_jobs
-            SET retry_count = retry_count + 1, status = 'queued', error_message = NULL
-            WHERE job_id = ?
-            """,
-            (job_id,),
-        )
-        cursor.execute("SELECT retry_count FROM background_jobs WHERE job_id = ?", (job_id,))
-        row = cursor.fetchone()
-        return row[0] if row else 0
+    def increment_retry(self, conn: Optional[Any] = None, job_id: str = "") -> int:
+        with self._get_session(conn) as session:
+            job = session.exec(select(BackgroundJobTable).where(BackgroundJobTable.job_id == job_id)).first()
+            if job:
+                job.retry_count = (job.retry_count or 0) + 1
+                job.status = "queued"
+                job.error_message = None
+                session.add(job)
+                session.commit()
+                return job.retry_count
+            return 0
 
-    def recover_stale_jobs(self, conn) -> int:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            UPDATE background_jobs
-            SET status = 'queued'
-            WHERE status = 'running'
-            """
-        )
-        return cursor.rowcount
+    def recover_stale_jobs(self, conn: Optional[Any] = None) -> int:
+        with self._get_session(conn) as session:
+            stale_jobs = session.exec(select(BackgroundJobTable).where(BackgroundJobTable.status == "running")).all()
+            for job in stale_jobs:
+                job.status = "queued"
+                session.add(job)
+            session.commit()
+            return len(stale_jobs)
 
-    def _map_row(self, row) -> Dict[str, Any]:
-        if hasattr(row, "keys"):
-            d = dict(row)
-        else:
-            d = {
-                "id": row[0],
-                "job_id": row[1],
-                "job_type": row[2],
-                "title": row[3],
-                "user_id": row[4],
-                "status": row[5],
-                "progress_current": row[6],
-                "progress_total": row[7],
-                "retry_count": row[8],
-                "max_retries": row[9],
-                "payload_json": row[10],
-                "results_json": row[11],
-                "metadata_json": row[12],
-                "error_message": row[13],
-                "trace_id": row[14],
-                "created_at": row[15],
-                "started_at": row[16],
-                "completed_at": row[17],
-            }
+    def _map_model(self, job: BackgroundJobTable) -> Dict[str, Any]:
+        d = {
+            "id": job.id,
+            "job_id": job.job_id,
+            "job_type": job.job_type,
+            "title": job.title,
+            "user_id": job.user_id,
+            "status": job.status,
+            "progress_current": job.progress_current,
+            "progress_total": job.progress_total,
+            "retry_count": job.retry_count,
+            "max_retries": job.max_retries,
+            "payload_json": job.payload_json,
+            "results_json": job.results_json,
+            "metadata_json": job.metadata_json,
+            "error_message": job.error_message,
+            "trace_id": job.trace_id,
+            "created_at": str(job.created_at) if job.created_at else None,
+            "started_at": str(job.started_at) if job.started_at else None,
+            "completed_at": str(job.completed_at) if job.completed_at else None,
+        }
 
         try:
             d["payload"] = json.loads(d.get("payload_json") or "{}")

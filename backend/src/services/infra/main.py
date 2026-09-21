@@ -9,6 +9,7 @@ Orchestrates:
 
 import sys
 from pathlib import Path
+
 import pulumi
 
 # Ensure backend root is in sys.path when running from Pulumi
@@ -17,15 +18,13 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from src.services.infra.contracts import (
-    ServiceInfraContext,
-    ServiceInfraOutput,
-    SharedInfraOutput,
-    MicroservicesInfraOutput,
     FrontendInfraOutput,
+    MicroservicesInfraOutput,
+    SharedInfraOutput,
 )
-from src.services.infra.shared import provision_shared_infra
-from src.services.infra.microservices import provision_microservices_infra
 from src.services.infra.frontend import provision_frontend_infra
+from src.services.infra.microservices import provision_microservices_infra
+from src.services.infra.shared import provision_shared_infra
 
 
 def provision_all_infra():
@@ -50,6 +49,8 @@ def provision_all_infra():
     pulumi.export("backend_health_url", api_endpoint.apply(lambda ep: f"{ep}/health"))
     pulumi.export("database_bucket_name", shared.database_bucket.id)
     pulumi.export("database_s3_uri", shared.database_s3_uri)
+    if shared.database_url is not None:
+        pulumi.export("database_url", shared.database_url)
     pulumi.export("frontend_bucket_name", frontend.bucket.id)
     pulumi.export("frontend_website_url", frontend.website_url)
 

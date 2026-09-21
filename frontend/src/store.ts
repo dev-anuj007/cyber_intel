@@ -1,9 +1,11 @@
 import { create } from "zustand";
-import { Account, AccountScore, SummaryStats, UserProfile, AuthModalMode } from "./types";
+import { Account, AccountScore, ScoreHistoryItem, SummaryStats, UserProfile, AuthModalMode } from "./types";
 
 interface AppStore {
   accounts: Account[];
   scores: Map<string, AccountScore>;
+  accountDetailsCache: Map<string, Account>;
+  scoreHistoryCache: Map<string, ScoreHistoryItem[]>;
   summary: SummaryStats | null;
   loading: boolean;
   error: string | null;
@@ -19,6 +21,8 @@ interface AppStore {
 
   setAccounts: (accounts: Account[]) => void;
   addScore: (score: AccountScore) => void;
+  cacheAccountDetail: (account: Account) => void;
+  cacheScoreHistory: (accountKey: string, history: ScoreHistoryItem[]) => void;
   setSummary: (summary: SummaryStats) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
@@ -38,6 +42,8 @@ interface AppStore {
 export const useAppStore = create<AppStore>((set) => ({
   accounts: [],
   scores: new Map(),
+  accountDetailsCache: new Map(),
+  scoreHistoryCache: new Map(),
   summary: null,
   loading: false,
   error: null,
@@ -57,10 +63,37 @@ export const useAppStore = create<AppStore>((set) => ({
       newScores.set(score.account_key, score);
       return { scores: newScores };
     }),
+  cacheAccountDetail: (account) =>
+    set((state) => {
+      const newCache = new Map(state.accountDetailsCache);
+      newCache.set(account.account_key, account);
+      if (account.version) {
+        newCache.set(`${account.account_key}:${account.version}`, account);
+        if (account.domain) {
+          newCache.set(`${account.domain}:${account.version}`, account);
+          newCache.set(`domain:${account.domain}:${account.version}`, account);
+        }
+      }
+      return { accountDetailsCache: newCache };
+    }),
+  cacheScoreHistory: (accountKey, history) =>
+    set((state) => {
+      const newCache = new Map(state.scoreHistoryCache);
+      newCache.set(accountKey, history);
+      return { scoreHistoryCache: newCache };
+    }),
   setSummary: (summary) => set({ summary }),
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
-  selectAccount: (account) => set({ selectedAccount: account }),
+  selectAccount: (account) =>
+    set((state) => {
+      if (account && (account.ports?.length || account.signals?.length || account.assets?.length)) {
+        const newCache = new Map(state.accountDetailsCache);
+        newCache.set(account.account_key, account);
+        return { selectedAccount: account, accountDetailsCache: newCache };
+      }
+      return { selectedAccount: account };
+    }),
   selectScore: (score) => set({ selectedScore: score }),
 
   setCurrentUser: (user) => set({ currentUser: user }),
@@ -84,6 +117,8 @@ export const useAppStore = create<AppStore>((set) => ({
       token: null,
       currentUser: null,
       isProfileModalOpen: false,
+      accountDetailsCache: new Map(),
+      scoreHistoryCache: new Map(),
     });
   },
 }));

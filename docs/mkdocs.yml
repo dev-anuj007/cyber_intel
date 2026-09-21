@@ -58,4 +58,8 @@ markdown_extensions:
       toc_depth: 2
 
 nav:
-  - Documentation: index.md
+  - System Overview & Guide: index.md
+  - Strategic Planning & ICP: planning.md
+  - System Architecture & Polyglot Storage: architecture.md
+  - Agentic Dev Loop & How We Build: how-you-build.md
+  - Technical Design Document (DDD): technical-design-doc.md

@@ -1,13 +1,13 @@
 from src.services.accounts.accounts_service import AccountsService, default_accounts_service
+from src.services.accounts.api import router as accounts_router
 from src.services.accounts.types import (
-    IAccountsService,
-    SummaryStats,
     Account,
     Asset,
+    IAccountsService,
     SecuritySignal,
     SignalSeverity,
+    SummaryStats,
 )
-from src.services.accounts.api import router as accounts_router
 
 __all__ = [
     "AccountsService",
@@ -20,4 +20,3 @@ __all__ = [
     "SignalSeverity",
     "accounts_router",
 ]
-

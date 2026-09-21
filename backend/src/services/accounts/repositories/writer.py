@@ -1,104 +1,155 @@
-"""Accounts Data Writer Repository."""
+from typing import Any, Optional, Set, Tuple
 
-import sqlite3
-from src.services.accounts.types import IAccountWriter, Account
+from sqlmodel import Session, col, create_engine, delete, select
+
+from src.services.accounts.repositories.models import (
+    AccountTable,
+    AssetTable,
+    CloudProviderTable,
+    DomainTable,
+    HostnameTable,
+    IpTable,
+    PortTable,
+    ProductTable,
+    SignalTable,
+)
+from src.services.accounts.types import Account, IAccountWriter
+
+
+from src.services.database import get_db_session
+
+
+def _get_session(conn: Any) -> Session:
+    return get_db_session(conn=conn)
 
 
 class AccountWriter(IAccountWriter):
+    def _clear_entities_in_session(self, session: Session, account_id: int) -> None:
+        session.exec(delete(SignalTable).where(col(SignalTable.account_id) == account_id))
+        session.exec(delete(CloudProviderTable).where(col(CloudProviderTable.account_id) == account_id))
+        session.exec(delete(ProductTable).where(col(ProductTable.account_id) == account_id))
+        session.exec(delete(PortTable).where(col(PortTable.account_id) == account_id))
+        session.exec(delete(HostnameTable).where(col(HostnameTable.account_id) == account_id))
+        session.exec(delete(IpTable).where(col(IpTable.account_id) == account_id))
+        session.exec(delete(AssetTable).where(col(AssetTable.account_id) == account_id))
+        session.exec(delete(DomainTable).where(col(DomainTable.account_id) == account_id))
 
-    def insert_account(self, conn: sqlite3.Connection, account: Account, priority_tier: str) -> int:
-        """Insert account and all child entities (domains, assets, IPs, hostnames, ports, products, signals)."""
-        cursor = conn.cursor()
+    def _upsert_account_record(self, session: Session, account: Account, priority_tier: str) -> int:
         signal_count = len(account.signals)
-
-        cursor.execute("SELECT id FROM accounts WHERE account_key = ?", (account.account_key,))
-        row = cursor.fetchone()
-        if row:
-            account_id = row[0]
-            cursor.execute(
-                "UPDATE accounts SET signal_count = ?, priority_tier = ? WHERE id = ?",
-                (signal_count, priority_tier, account_id),
-            )
+        acc = session.exec(select(AccountTable).where(col(AccountTable.account_key) == account.account_key)).first()
+        if acc:
+            acc.signal_count = signal_count
+            acc.priority_tier = priority_tier
+            session.add(acc)
+            session.commit()
+            session.refresh(acc)
         else:
-            cursor.execute(
-                "INSERT INTO accounts (account_key, signal_count, priority_tier) VALUES (?, ?, ?)",
-                (account.account_key, signal_count, priority_tier),
+            acc = AccountTable(
+                account_key=account.account_key,
+                signal_count=signal_count,
+                priority_tier=priority_tier,
             )
-            account_id = cursor.lastrowid
+            session.add(acc)
+            session.commit()
+            session.refresh(acc)
 
-        self.clear_account_entities_by_id(conn, account_id)
+        if acc.id is None:
+            raise ValueError("Failed to obtain generated account ID")
+        return acc.id
 
+    def _insert_account_child_entities(self, session: Session, account_id: int, account: Account) -> None:
         if account.domains:
-            domains_data = [(account_id, d) for d in dict.fromkeys(account.domains)]
-            cursor.executemany("INSERT INTO domains (account_id, domain) VALUES (?, ?)", domains_data)
+            for d in dict.fromkeys(account.domains):
+                session.add(DomainTable(account_id=account_id, domain=d))
 
         if account.assets:
-            seen_assets = set()
-            assets_data = []
+            seen_assets: Set[Tuple[Optional[str], Optional[int], Optional[str]]] = set()
             for a in account.assets:
                 tup = (a.ip, a.port, a.hostname)
                 if tup not in seen_assets:
                     seen_assets.add(tup)
-                    assets_data.append((account_id, a.ip, a.port, a.hostname))
-            if assets_data:
-                cursor.executemany("INSERT INTO assets (account_id, ip, port, hostname) VALUES (?, ?, ?, ?)", assets_data)
+                    session.add(AssetTable(account_id=account_id, ip=a.ip, port=a.port, hostname=a.hostname))
 
         if account.ips:
-            ips_data = [(account_id, ip) for ip in dict.fromkeys(account.ips)]
-            cursor.executemany("INSERT INTO ips (account_id, ip) VALUES (?, ?)", ips_data)
+            for ip in dict.fromkeys(account.ips):
+                session.add(IpTable(account_id=account_id, ip=ip))
 
         if account.hostnames:
-            hostnames_data = [(account_id, h) for h in dict.fromkeys(account.hostnames)]
-            cursor.executemany("INSERT INTO hostnames (account_id, hostname) VALUES (?, ?)", hostnames_data)
+            for h in dict.fromkeys(account.hostnames):
+                session.add(HostnameTable(account_id=account_id, hostname=h))
 
         if account.ports:
-            ports_data = [(account_id, p) for p in sorted(set(account.ports))]
-            cursor.executemany("INSERT INTO ports (account_id, port) VALUES (?, ?)", ports_data)
+            for p in sorted(set(account.ports)):
+                session.add(PortTable(account_id=account_id, port=p))
 
         if account.products:
-            products_data = [(account_id, prod) for prod in dict.fromkeys(account.products)]
-            cursor.executemany("INSERT INTO products (account_id, product) VALUES (?, ?)", products_data)
+            for prod in dict.fromkeys(account.products):
+                session.add(ProductTable(account_id=account_id, product=prod))
 
         if account.cloud_providers:
-            providers_data = [(account_id, prov) for prov in dict.fromkeys(account.cloud_providers)]
-            cursor.executemany("INSERT INTO cloud_providers (account_id, provider) VALUES (?, ?)", providers_data)
+            for prov in dict.fromkeys(account.cloud_providers):
+                session.add(CloudProviderTable(account_id=account_id, provider=prov))
 
         if account.signals:
-            seen_signals = set()
-            signals_data = []
+            seen_signals: Set[Tuple[str, str, str, str]] = set()
             for s in account.signals:
                 s_sev = s.severity.value if hasattr(s.severity, "value") else str(s.severity)
                 tup = (s.name, s_sev, getattr(s, "category", ""), s.evidence)
                 if tup not in seen_signals:
                     seen_signals.add(tup)
-                    signals_data.append((account_id, s.name, s_sev, getattr(s, "category", ""), s.evidence))
-            if signals_data:
-                cursor.executemany(
-                    "INSERT INTO signals (account_id, name, severity, category, evidence) VALUES (?, ?, ?, ?, ?)",
-                    signals_data,
-                )
+                    session.add(
+                        SignalTable(
+                            account_id=account_id,
+                            name=s.name,
+                            severity=s_sev,
+                            category=getattr(s, "category", ""),
+                            evidence=s.evidence,
+                        )
+                    )
 
-        return account_id
+    def insert_account(self, conn: Any, account: Account, priority_tier: str) -> int:
+        with _get_session(conn) as session:
+            account_id = self._upsert_account_record(session, account, priority_tier)
+            self._clear_entities_in_session(session, account_id)
+            self._insert_account_child_entities(session, account_id, account)
+            session.commit()
+            return account_id
 
-    def clear_account_entities_by_id(self, conn: sqlite3.Connection, account_id: int) -> None:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM signals WHERE account_id = ?", (account_id,))
-        cursor.execute("DELETE FROM cloud_providers WHERE account_id = ?", (account_id,))
-        cursor.execute("DELETE FROM products WHERE account_id = ?", (account_id,))
-        cursor.execute("DELETE FROM ports WHERE account_id = ?", (account_id,))
-        cursor.execute("DELETE FROM hostnames WHERE account_id = ?", (account_id,))
-        cursor.execute("DELETE FROM ips WHERE account_id = ?", (account_id,))
-        cursor.execute("DELETE FROM assets WHERE account_id = ?", (account_id,))
-        cursor.execute("DELETE FROM domains WHERE account_id = ?", (account_id,))
+    def clear_account_entities_by_id(self, conn: Any, account_id: int) -> None:
+        with _get_session(conn) as session:
+            self._clear_entities_in_session(session, account_id)
+            session.commit()
 
-    def clear_accounts(self, conn: sqlite3.Connection) -> None:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM signals")
-        cursor.execute("DELETE FROM cloud_providers")
-        cursor.execute("DELETE FROM products")
-        cursor.execute("DELETE FROM ports")
-        cursor.execute("DELETE FROM hostnames")
-        cursor.execute("DELETE FROM ips")
-        cursor.execute("DELETE FROM assets")
-        cursor.execute("DELETE FROM domains")
-        cursor.execute("DELETE FROM accounts")
+    def update_priority_tier(self, conn: Any, account_key: str, tier: str) -> bool:
+        with _get_session(conn) as session:
+            acc = session.exec(select(AccountTable).where(col(AccountTable.account_key) == account_key)).first()
+            if acc:
+                acc.priority_tier = tier
+                session.add(acc)
+                session.commit()
+                return True
+            return False
+
+    def delete_account(self, conn: Any, account_key: str) -> bool:
+        with _get_session(conn) as session:
+            acc = session.exec(select(AccountTable).where(col(AccountTable.account_key) == account_key)).first()
+            if acc:
+                if acc.id is not None:
+                    self._clear_entities_in_session(session, acc.id)
+                    session.exec(delete(AccountTable).where(col(AccountTable.id) == acc.id))
+                session.commit()
+                return True
+            return False
+
+    def clear_accounts(self, conn: Any) -> None:
+        with _get_session(conn) as session:
+            session.exec(delete(SignalTable))
+            session.exec(delete(CloudProviderTable))
+            session.exec(delete(ProductTable))
+            session.exec(delete(PortTable))
+            session.exec(delete(HostnameTable))
+            session.exec(delete(IpTable))
+            session.exec(delete(AssetTable))
+            session.exec(delete(DomainTable))
+            session.exec(delete(AccountTable))
+            session.commit()

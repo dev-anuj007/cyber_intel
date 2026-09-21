@@ -1,12 +1,13 @@
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Sequence
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from src.core.exceptions import AppException
-from src.services.logger import get_logger, get_current_trace_id
+from src.services.logger import get_current_trace_id, get_logger
 
 logger = get_logger("error_boundary")
 
@@ -33,18 +34,21 @@ def build_error_payload(
     }
 
 
-def format_validation_errors(errors: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def format_validation_errors(errors: Sequence[Any]) -> List[Dict[str, Any]]:
     formatted = []
     for err in errors:
-        loc = err.get("loc", [])
-        field = ".".join(str(p) for p in loc if p != "body") or "body"
-        msg = err.get("msg", "Invalid value")
-        err_type = err.get("type", "value_error")
-        formatted.append({
-            "field": field,
-            "message": msg,
-            "type": err_type,
-        })
+        if isinstance(err, dict):
+            loc = err.get("loc", [])
+            field = ".".join(str(p) for p in loc if p != "body") or "body"
+            msg = err.get("msg", "Invalid value")
+            err_type = err.get("type", "value_error")
+            formatted.append(
+                {
+                    "field": field,
+                    "message": msg,
+                    "type": err_type,
+                }
+            )
     return formatted
 
 

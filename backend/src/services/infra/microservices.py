@@ -14,12 +14,12 @@ Responsible for:
 """
 
 import importlib
-from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict
+
 import pulumi
 import pulumi_aws as aws
 
-from .contracts import ServiceInfraContext, ServiceInfraOutput, MicroservicesInfraOutput
+from .contracts import MicroservicesInfraOutput, ServiceInfraContext, ServiceInfraOutput
 
 # Standard microservice order
 KNOWN_MICROSERVICES = [
@@ -57,9 +57,7 @@ def provision_microservices_infra(ctx: ServiceInfraContext) -> MicroservicesInfr
         role=ctx.lambda_role_arn,
         package_type="Image",
         image_uri=ctx.get_image_uri("gateway"),
-        image_config=aws.lambda_.FunctionImageConfigArgs(
-            commands=["src.lambda_handler.handler"]
-        ),
+        image_config=aws.lambda_.FunctionImageConfigArgs(commands=["src.lambda_handler.handler"]),
         memory_size=2048,
         timeout=60,
         ephemeral_storage=aws.lambda_.FunctionEphemeralStorageArgs(size=4096),

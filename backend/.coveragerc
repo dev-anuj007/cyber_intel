@@ -1,0 +1,15 @@
+[run]
+branch = False
+omit =
+    */infra/*
+    */lambda_handler.py
+    */__pycache__/*
+    */tests/*
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    if __name__ == .__main__.:
+    raise NotImplementedError
+    if TYPE_CHECKING:

@@ -1,6 +1,8 @@
-from typing import Protocol, List, Dict, Any, Optional
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Protocol
+
 from pydantic import BaseModel
+
 from src.services.accounts.types import Account
 from src.services.scorer.types import PriorityTier
 
@@ -11,7 +13,6 @@ class EvalExample(BaseModel):
     expected_tier: PriorityTier
     expected_score: int
     reasoning: str
-
 
 
 class EvalRunRequest(BaseModel):
@@ -37,27 +38,23 @@ class EvalCompareRequest(BaseModel):
 
 
 class IEvalReader(Protocol):
-    def list_prompts(self, prompts_dir: Path) -> List[Dict[str, Any]]:
-        ...
+    def list_prompts(self, prompts_dir: Path) -> List[Dict[str, Any]]: ...
 
-    def list_history(self, results_dir: Path) -> List[Dict[str, Any]]:
-        ...
+    def list_history(self, results_dir: Path) -> List[Dict[str, Any]]: ...
 
-    def read_result_file(self, results_dir: Path, filename: str) -> Dict[str, Any]:
-        ...
+    def get_history_file(self, results_dir: Path, filename: str) -> Optional[Dict[str, Any]]: ...
+
+    def read_result_file(self, results_dir: Path, filename: str) -> Optional[Dict[str, Any]]: ...
 
 
 class IEvalWriter(Protocol):
-    def save_results(self, results: dict, version: str, out_dir: str) -> Path:
-        ...
+    def save_results(self, results: dict, version: str, out_dir: str) -> Path: ...
 
 
 class IEvalService(Protocol):
-    def list_prompts(self) -> List[Dict[str, Any]]:
-        ...
+    def list_prompts(self) -> List[Dict[str, Any]]: ...
 
-    def get_default_dataset(self) -> List[Dict[str, Any]]:
-        ...
+    def get_default_dataset(self) -> List[Dict[str, Any]]: ...
 
     def run_eval(
         self,
@@ -68,8 +65,7 @@ class IEvalService(Protocol):
         eval_set_path: Optional[str] = None,
         eval_set: Optional[List[Dict[str, Any]]] = None,
         sample_limit: Optional[int] = None,
-    ) -> Dict[str, Any]:
-        ...
+    ) -> Dict[str, Any]: ...
 
     def compare_prompts(
         self,
@@ -84,12 +80,8 @@ class IEvalService(Protocol):
         eval_set_path: Optional[str] = None,
         eval_set: Optional[List[Dict[str, Any]]] = None,
         sample_limit: Optional[int] = None,
-    ) -> Dict[str, Any]:
-        ...
+    ) -> Dict[str, Any]: ...
 
-    def list_history(self) -> List[Dict[str, Any]]:
-        ...
+    def list_history(self) -> List[Dict[str, Any]]: ...
 
-    def get_result_file(self, filename: str) -> Dict[str, Any]:
-        ...
-
+    def get_result_file(self, filename: str) -> Optional[Dict[str, Any]]: ...

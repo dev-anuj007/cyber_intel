@@ -1,11 +1,11 @@
 import json
-from typing import Optional
-from fastapi import APIRouter, Response, Depends
+from typing import Any, Optional
 
-from src.core.exceptions import NotFoundError, ExternalServiceError
-from src.services.accounts.types import SummaryStats
+from fastapi import APIRouter, Depends, Response
+
+from src.core.exceptions import ExternalServiceError, NotFoundError
 from src.services.accounts.accounts_service import AccountsService, default_accounts_service
-from src.services.scorer.scorer_service import ScorerService, default_scorer_service
+from src.services.accounts.types import SummaryStats
 
 router = APIRouter(tags=["Accounts & Prospecting"])
 
@@ -14,7 +14,9 @@ def get_accounts_service() -> AccountsService:
     return default_accounts_service
 
 
-def get_scorer_service() -> ScorerService:
+def get_scorer_service():
+    from src.services.scorer.scorer_service import default_scorer_service
+
     return default_scorer_service
 
 
@@ -29,8 +31,9 @@ def get_summary(accounts_service: AccountsService = Depends(get_accounts_service
 
 @router.get("/api/search")
 @router.get("/api/accounts/search")
+@router.get("/api/accounts/search/domain")
 def search_accounts(
-    q: str,
+    q: str = "",
     limit: int = 10,
     accounts_service: AccountsService = Depends(get_accounts_service),
 ):
@@ -45,6 +48,7 @@ def search_accounts(
 
 
 @router.get("/api/accounts/by-signal/{signal_name}")
+@router.get("/api/accounts/signal/{signal_name}")
 def get_accounts_by_signal_endpoint(
     signal_name: str,
     skip: int = 0,
@@ -88,26 +92,58 @@ def list_accounts(
 @router.get("/api/accounts/{account_key}/score-history")
 def get_account_score_history(
     account_key: str,
-    scorer_service: ScorerService = Depends(get_scorer_service),
+    version: Optional[str] = None,
+    scorer_service: Any = Depends(get_scorer_service),
 ):
-    history = scorer_service.get_score_history_for_account(account_key)
+    history = scorer_service.get_score_history_for_account(account_key, version=version)
     return {
         "account_key": account_key,
+        "version": version,
         "total_versions": len(history),
         "history": history,
+    }
+
+
+@router.get("/api/accounts/health")
+def accounts_health(accounts_service: AccountsService = Depends(get_accounts_service)):
+    stats = accounts_service.get_summary_stats()
+    return {"status": "healthy", "service": "accounts", "total_accounts": stats.get("total_accounts", 0)}
+
+
+@router.get("/api/accounts/{account_key}/versions")
+def get_account_versions(
+    account_key: str,
+    accounts_service: AccountsService = Depends(get_accounts_service),
+):
+    versions = accounts_service.get_account_versions(account_key)
+    return {
+        "account_key": account_key,
+        "total_versions": len(versions),
+        "versions": [v.model_dump() if hasattr(v, "model_dump") else v for v in versions],
     }
 
 
 @router.get("/api/accounts/{account_key}")
 def get_account(
     account_key: str,
+    version: Optional[str] = None,
     accounts_service: AccountsService = Depends(get_accounts_service),
-    scorer_service: ScorerService = Depends(get_scorer_service),
+    scorer_service: Any = Depends(get_scorer_service),
 ):
-    account = accounts_service.get_account(account_key)
+    account = accounts_service.get_account(account_key, version=version)
     if not account:
         raise NotFoundError(message=f"Account '{account_key}' not found", code="ACCOUNT_NOT_FOUND")
 
     acc_dict = account.model_dump() if hasattr(account, "model_dump") else account.dict()
-    acc_dict["latest_score"] = scorer_service.get_latest_score_for_account(account_key)
+    if not acc_dict.get("latest_score"):
+        acc_dict["latest_score"] = scorer_service.get_latest_score_for_account(account.account_key)
     return acc_dict
+
+
+@router.delete("/api/accounts/{account_key}")
+def delete_account(
+    account_key: str,
+    accounts_service: AccountsService = Depends(get_accounts_service),
+):
+    success = accounts_service.delete_account(account_key)
+    return {"success": success, "account_key": account_key}

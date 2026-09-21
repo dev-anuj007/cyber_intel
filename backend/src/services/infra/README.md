@@ -1,48 +1,20 @@
-# Dedicated Infrastructure Service (`src.services.infra`)
+# Dedicated Infrastructure Service (src.services.infra)
 
-This service manages the complete Pulumi serverless cloud infrastructure for the **Sales Intelligence Platform**.
+This package contains optional deployment and infrastructure automation for the platform. The app runtime itself is a local FastAPI + React + PostgreSQL stack, and the primary development workflow is to run the backend and frontend directly on a workstation or local environment.
 
-## Architecture Responsibilities
+## What this folder is for
 
-1. **Foundational Shared Resources (`shared.py`)**:
-   - Amazon S3 Database Bucket (direct `accounts.db` hosting with SSE-S3 encryption).
-   - Amazon ECR Repository for container images.
-   - Amazon IAM Lambda Execution Role & S3 access policies.
-   - Amazon API Gateway HTTP API (v2) with CORS and `$default` stage.
-   - Common environment variable configuration.
+- infrastructure provisioning helpers for environments that want to automate setup
+- optional deployment scripts for custom hosting patterns
+- compatibility with local automation and environment bootstrapping workflows
 
-2. **Microservices Deployment Orchestrator (`microservices.py`)**:
-   - Automatically discovers and invokes each microservice's dedicated infrastructure provisioner (`src.services.<service>.infra.main`):
-     - `database`
-     - `accounts`
-     - `auth`
-     - `scorer`
-     - `crawler`
-     - `eval`
-     - `jobs`
-   - Unified Gateway Fallback Lambda (`/health` & `$default` routes).
-   - Dedicated API Gateway integrations and invoke permissions.
+## What matters in practice
 
-3. **Frontend Infrastructure & Static Website (`frontend.py`)**:
-   - Amazon S3 Static Website Hosting for React + Vite Frontend SPA and MkDocs interactive technical documentation.
-   - S3 Bucket Public Access Block & Public Read Policy.
-   - S3 CORS configuration.
+For normal day-to-day work, the key runtime flow is:
 
-## Quick Commands
+1. configure PostgreSQL in the backend environment
+2. run the FastAPI app locally
+3. run the React frontend locally
+4. validate behavior through tests and service-level checks
 
-### Deploy Everything (Infra + Docker + DB + Frontend)
-From PowerShell:
-```powershell
-.\src\services\infra\deploy.ps1 -Stack dev -AwsRegion ap-south-1
-```
-
-From Bash:
-```bash
-./src/services/infra/deploy.sh dev ap-south-1
-```
-
-### Pulumi IaC Direct Execution
-```bash
-cd backend/src/services/infra
-pulumi up
-```
+The repo’s actual architecture is therefore best described as a modular local web application rather than a cloud-only deployment model.

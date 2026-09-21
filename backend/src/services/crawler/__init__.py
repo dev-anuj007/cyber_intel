@@ -1,32 +1,32 @@
 """Crawler Service Package."""
 
+from src.services.crawler.api import router as crawler_router
 from src.services.crawler.crawler_service import (
     CrawlerService,
     DomainCrawler,
     default_crawler_service,
 )
 from src.services.crawler.scanners import (
-    ScannerFactory,
+    CisaKevScanner,
     IScanner,
-    ScanResult,
-    StandardCrawlerScanner,
     OwaspZapScanner,
     ProjectDiscoveryScanner,
-    CisaKevScanner,
+    ScannerFactory,
+    ScanResult,
+    StandardCrawlerScanner,
 )
 from src.services.crawler.scanners.standard_scanner import (
+    CLOUD_SIGNATURES,
     COMMON_SUBDOMAINS,
     DEFAULT_PORTS,
-    CLOUD_SIGNATURES,
 )
 from src.services.crawler.types import (
-    ICrawlerService,
-    ICrawlerReader,
-    ICrawlerWriter,
-    CrawlerRunRequest,
     CrawlerJobSubmitRequest,
+    CrawlerRunRequest,
+    ICrawlerReader,
+    ICrawlerService,
+    ICrawlerWriter,
 )
-from src.services.crawler.api import router as crawler_router
 
 __all__ = [
     "CrawlerService",

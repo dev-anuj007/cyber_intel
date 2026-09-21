@@ -1,5 +1,10 @@
 {
+  "venvPath": "backend",
+  "venv": ".venv",
   "extraPaths": [
-    "backend"
-  ]
+    "backend",
+    "backend/src"
+  ],
+  "pythonVersion": "3.11",
+  "reportMissingTypeStubs": false
 }

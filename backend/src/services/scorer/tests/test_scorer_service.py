@@ -1,73 +1,182 @@
-"""Unit tests for ScorerService."""
+"""Comprehensive Pytest Test Suite for Scorer Service, Repositories, and API."""
 
-import unittest
-import tempfile
-import shutil
-from pathlib import Path
+from datetime import datetime, timezone
+from unittest.mock import MagicMock
 
-from src.services.database import init_database
-from src.services.scorer.scorer_service import ScorerService
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from src.services.accounts.repositories.writer import AccountWriter
 from src.services.accounts.types import Account, Asset, SecuritySignal, SignalSeverity
+from src.services.database.database_service import DatabaseService
+from src.services.scorer.api import get_scorer_service, router
+from src.services.scorer.repositories.reader import ScoreReader
+from src.services.scorer.repositories.writer import ScoreWriter
+from src.services.scorer.scorer_service import ScorerService
+from src.services.scorer.types import AccountScore, PriorityTier
 
 
-class TestScorerService(unittest.TestCase):
-    def setUp(self):
-        self.test_dir = tempfile.mkdtemp()
-        self.db_path = Path(self.test_dir) / "test_scorer.db"
-        init_database(db_path=self.db_path)
-        self.scorer = ScorerService(db_path=self.db_path)
+@pytest.fixture
+def test_db(tmp_path):
+    db_path = str(tmp_path / "test_scorer_comp.db")
+    db_service = DatabaseService(db_path=db_path)
+    db_service.init_database()
+    return db_path
 
-    def tearDown(self):
-        shutil.rmtree(self.test_dir, ignore_errors=True)
 
-    def test_scorer_format_context_and_cost(self):
-        account = Account(
-            account_key="domain:cloudcorp.io",
-            domains=["cloudcorp.io"],
-            assets=[Asset(ip="1.2.3.4", port=443, hostname="app.cloudcorp.io")],
-            ips=["1.2.3.4"],
-            hostnames=["app.cloudcorp.io"],
-            ports=[443],
-            products=["Nginx 1.20"],
-            cloud_providers=["GCP"],
-            signals=[
-                SecuritySignal(
-                    name="high_severity_vulnerability",
-                    severity=SignalSeverity.HIGH,
-                    category="vulnerability",
-                    evidence="CVSS 8.5 on exposed service",
-                )
-            ],
+@pytest.fixture
+def scorer_service(test_db):
+    reader = ScoreReader()
+    writer = ScoreWriter()
+    return ScorerService(reader=reader, writer=writer, db_path=test_db)
+
+
+@pytest.fixture
+def scored_account():
+    return Account(
+        account_key="domain:testtarget.com",
+        domains=["testtarget.com"],
+        assets=[Asset(ip="192.168.1.1", port=443, hostname="testtarget.com")],
+        ips=["192.168.1.1"],
+        hostnames=["testtarget.com"],
+        ports=[443],
+        products=["Apache HTTP Server"],
+        cloud_providers=["AWS"],
+        signals=[
+            SecuritySignal(
+                name="cve_vulnerability",
+                severity=SignalSeverity.CRITICAL,
+                category="vulnerability",
+                evidence="CVE-2023-9999",
+            )
+        ],
+    )
+
+
+def test_scorer_repositories_and_service_crud(scorer_service, scored_account, test_db):
+    # 1. Format context
+    ctx = scorer_service.format_account_context(scored_account)
+    assert "testtarget.com" in ctx
+    assert "CVE-2023-9999" in ctx
+
+    # 2. Save score
+    score = AccountScore(
+        account_key="domain:testtarget.com",
+        account=scored_account,
+        version=1,
+        score=95,
+        priority_tier=PriorityTier.TIER_1_CRITICAL,
+        key_risks=["CVE-2023-9999 Exploit"],
+        suggested_outreach="Urgent patch advisory",
+        score_rationale="Active critical CVE detected",
+        model_version="v2.0",
+        model_name="gemini-3.1-flash-lite",
+        tokens_used={"prompt_tokens": 500, "completion_tokens": 150},
+        latency_ms=320,
+        cost_usd=0.00045,
+        timestamp=datetime.now(timezone.utc),
+    )
+    saved = scorer_service.save_score(score)
+    assert saved is not None
+    assert saved["score"] == 95
+    assert saved["priority_tier"] == "tier_1_critical"
+
+    # 3. Read latest score
+    latest = scorer_service.get_latest_score("domain:testtarget.com")
+    assert latest is not None
+    assert latest["score"] == 95
+
+    # 4. Save second version of score
+    score2 = AccountScore(
+        account_key="domain:testtarget.com",
+        account=scored_account,
+        version=2,
+        score=80,
+        priority_tier=PriorityTier.TIER_2_HIGH,
+        key_risks=["High severity patch needed"],
+        suggested_outreach="Security notification",
+        score_rationale="Score lowered after mitigations",
+        model_version="v2.0",
+        model_name="gemini-3.1-flash-lite",
+        tokens_used={"prompt_tokens": 450, "completion_tokens": 120},
+        latency_ms=280,
+        cost_usd=0.00038,
+        timestamp=datetime.now(timezone.utc),
+    )
+    saved2 = scorer_service.save_score(score2)
+    assert saved2["version"] == 2
+
+    # 5. Read history
+    history = scorer_service.get_score_history("domain:testtarget.com")
+    assert len(history) == 2
+
+    # Read latest after version 2
+    latest2 = scorer_service.get_latest_score("domain:testtarget.com")
+    assert latest2["version"] == 2
+    assert latest2["score"] == 80
+
+
+def test_scorer_ai_scoring_mocked(scorer_service, scored_account, test_db):
+    mock_response = MagicMock()
+    mock_response.text = '{"score": 90, "priority_tier": "tier_1_critical", "key_risks": ["Active exploit"], "suggested_outreach": "Contact CISO", "score_rationale": "High risk account"}'
+    mock_response.usage_metadata.prompt_token_count = 600
+    mock_response.usage_metadata.candidates_token_count = 120
+
+    # Ensure account exists in DB
+    acc_writer = AccountWriter()
+    db_svc = DatabaseService(db_path=test_db)
+    with db_svc.get_connection() as conn:
+        acc_writer.insert_account(conn, scored_account, "tier_1_critical")
+        conn.commit()
+
+    mock_client = MagicMock()
+    mock_client.models.generate_content.return_value = mock_response
+    scorer_service.client = mock_client
+
+    # Perform scoring
+    scored = scorer_service.score_account(scored_account)
+    assert scored is not None
+    assert scored.score == 90
+    assert scored.priority_tier == PriorityTier.TIER_1_CRITICAL
+
+
+def test_scorer_api_endpoints(scorer_service, scored_account, test_db):
+    api_app = FastAPI()
+    api_app.include_router(router)
+    api_app.dependency_overrides[get_scorer_service] = lambda: scorer_service
+    client = TestClient(api_app)
+
+    # Save a mock score to DB first
+    db_svc = DatabaseService(db_path=test_db)
+    with db_svc.get_connection() as conn:
+        scorer_service.writer.save_score(
+            conn,
+            {
+                "account_key": "domain:testtarget.com",
+                "version": 1,
+                "score": 85,
+                "priority_tier": "tier_2_high",
+                "key_risks": ["Vulnerability X"],
+                "suggested_outreach": "Outreach Y",
+                "score_rationale": "High risk",
+                "model_version": "v2.0",
+                "model_name": "gemini-3.1-flash-lite",
+                "tokens_used": {"prompt": 100, "completion": 50},
+                "latency_ms": 150,
+                "cost_usd": 0.0001,
+            },
         )
+        conn.commit()
 
-        ctx = self.scorer.format_account_context(account)
-        self.assertIn("domain:cloudcorp.io", ctx)
-        self.assertIn("high_severity_vulnerability", ctx)
+    # Get latest score
+    r = client.get("/api/scores/latest/domain:testtarget.com")
+    assert r.status_code == 200
+    assert r.json()["score"] == 85
 
-        cost = self.scorer.calculate_cost(input_tokens=1000, output_tokens=500)
-        self.assertGreater(cost, 0)
-        self.assertIsInstance(cost, float)
+    # Get score history
+    r = client.get("/api/scores/history/domain:testtarget.com")
+    assert r.status_code == 200
+    assert len(r.json()) >= 1
 
-    def test_scorer_custom_prompt_template(self):
-        account = Account(
-            account_key="domain:test.com",
-            domains=["test.com"],
-            assets=[],
-            ips=[],
-            hostnames=[],
-            ports=[],
-            products=[],
-            cloud_providers=[],
-            signals=[],
-        )
-
-        prompt = self.scorer.get_prompt(
-            account,
-            custom_prompt_template="Custom Evaluation System:\n{account_context}\nScore now."
-        )
-        self.assertIn("Custom Evaluation System:", prompt)
-        self.assertIn("domain:test.com", prompt)
-
-
-if __name__ == "__main__":
-    unittest.main()
+    api_app.dependency_overrides.clear()

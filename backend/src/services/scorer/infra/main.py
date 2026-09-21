@@ -1,6 +1,5 @@
 """Scorer Microservice Dedicated Pulumi Infrastructure Setup."""
 
-from typing import List
 import pulumi
 import pulumi_aws as aws
 
@@ -19,9 +18,7 @@ def provision_service_infra(ctx: ServiceInfraContext) -> ServiceInfraOutput:
         role=ctx.lambda_role_arn,
         package_type="Image",
         image_uri=ctx.get_image_uri(service_name),
-        image_config=aws.lambda_.FunctionImageConfigArgs(
-            commands=["src.services.scorer.lambda_handler.handler"]
-        ),
+        image_config=aws.lambda_.FunctionImageConfigArgs(commands=["src.services.scorer.lambda_handler.handler"]),
         memory_size=2048,
         timeout=120,
         ephemeral_storage=aws.lambda_.FunctionEphemeralStorageArgs(size=4096),

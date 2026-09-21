@@ -46,12 +46,6 @@ function App() {
     }
   }, [token]);
 
-  useEffect(() => {
-    if (token) {
-      loadDashboard();
-    }
-  }, [route.view, token]);
-
   const loadDashboard = async () => {
     setLoading(true);
     try {

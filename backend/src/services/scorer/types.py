@@ -1,8 +1,9 @@
-from typing import Protocol, Optional, Dict, Any, List, Union
 from datetime import datetime
 from enum import Enum
-import sqlite3
+from typing import Any, Dict, List, Optional, Protocol, Union
+
 from pydantic import BaseModel, ConfigDict
+
 from src.services.accounts.types import Account
 
 
@@ -24,6 +25,7 @@ class AccountScore(BaseModel):
     key_risks: List[str] = []
     suggested_outreach: str = ""
     model_version: str
+    model_name: Optional[str] = "gemini-3.1-flash-lite"
     timestamp: datetime
     tokens_used: dict = {}
     latency_ms: int = 0
@@ -49,8 +51,9 @@ class LLMTrace(BaseModel):
 
 
 class ScoringRequest(BaseModel):
-    account_key: str
+    account_key: Optional[str] = None
     account: Optional[Account] = None
+    prompt_version: Optional[str] = None
 
 
 class ScoringResponse(BaseModel):
@@ -61,71 +64,61 @@ class ScoringResponse(BaseModel):
     score_rationale: str
 
 
-
 class LLMStats(BaseModel):
     total_calls: int
     total_tokens: int
     total_cost_usd: float
     avg_latency_ms: float
-    trace_file: str
+    trace_file: Optional[str] = None
 
 
 class IScoreReader(Protocol):
     """Score data reader contract."""
 
-    def get_latest_score(self, conn: sqlite3.Connection, account_key: str) -> Optional[dict]:
-        ...
+    def get_latest_score(
+        self, conn: Any, account_key: str, version: Optional[str] = None
+    ) -> Optional[dict]: ...
 
-    def get_score_history(self, conn: sqlite3.Connection, account_key: str) -> List[dict]:
-        ...
+    def get_score_history(
+        self, conn: Any, account_key: str, version: Optional[str] = None
+    ) -> List[dict]: ...
 
 
 class IScoreWriter(Protocol):
     """Score data writer contract."""
 
-    def save_score(self, conn: sqlite3.Connection, score: AccountScore) -> dict:
-        ...
+    def save_score(self, conn: Any, score: AccountScore) -> dict: ...
 
 
 class IScorerService(Protocol):
     """Scorer business service contract."""
 
-    def calculate_cost(self, input_tokens: int, output_tokens: int) -> float:
-        ...
+    def calculate_cost(self, input_tokens: int, output_tokens: int) -> float: ...
 
-    def format_account_context(self, account: Account) -> str:
-        ...
+    def format_account_context(self, account: Account) -> str: ...
 
     def get_prompt(
         self,
         account: Account,
         prompt_version: Optional[str] = None,
         custom_prompt_template: Optional[str] = None,
-    ) -> str:
-        ...
+    ) -> str: ...
 
     def score_account(
         self,
         account: Account,
         prompt_version: Optional[str] = None,
         custom_prompt_template: Optional[str] = None,
-    ) -> AccountScore:
-        ...
+    ) -> AccountScore: ...
 
-    def score_batch(self, account_keys: List[str], limit: int = 10) -> List[AccountScore]:
-        ...
+    def score_batch(self, account_keys: List[str], limit: int = 10) -> List[AccountScore]: ...
 
-    def get_latest_score_for_account(self, account_key: str) -> Optional[dict]:
-        ...
+    def get_latest_score_for_account(self, account_key: str, version: Optional[str] = None) -> Optional[dict]: ...
 
-    def get_score_history_for_account(self, account_key: str) -> List[dict]:
-        ...
+    def get_score_history_for_account(self, account_key: str, version: Optional[str] = None) -> List[dict]: ...
 
-    def log_trace(self, trace: LLMTrace) -> None:
-        ...
+    def log_trace(self, trace: LLMTrace) -> None: ...
 
-    def get_traces(self) -> List[LLMTrace]:
-        ...
+    def get_traces(self) -> List[LLMTrace]: ...
 
-    def get_summary(self) -> Dict[str, Any]:
-        ...
+    def get_summary(self) -> Dict[str, Any]: ...

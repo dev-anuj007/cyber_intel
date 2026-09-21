@@ -1,17 +1,18 @@
+import socket
 import time
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Callable
+from typing import Any, Callable, Dict, List, Optional, Union
 
-from src.services.accounts.types import Account, Asset, SecuritySignal
-from src.services.aggregator.aggregator_service import normalize_domain
-from src.services.crawler.types import (
-    ICrawlerService,
-    ICrawlerReader,
-    ICrawlerWriter,
-)
+from src.services.accounts.types import Account
+from src.services.aggregator.aggregator_service import is_valid_account_domain, normalize_domain
 from src.services.crawler.repositories.reader import CrawlerReader
 from src.services.crawler.repositories.writer import CrawlerWriter
 from src.services.crawler.scanners import ScannerFactory
+from src.services.crawler.types import (
+    ICrawlerReader,
+    ICrawlerService,
+    ICrawlerWriter,
+)
 from src.services.jobs.jobs_service import default_jobs_service
 from src.services.logger import get_logger
 
@@ -21,20 +22,23 @@ logger = get_logger("services.crawler")
 class CrawlerService(ICrawlerService):
     def __init__(
         self,
-        db_path: Optional[Path] = None,
+        db_path: Optional[Union[Path, str]] = None,
         timeout: float = 0.8,
         max_subdomains: int = 12,
         ports: Optional[List[int]] = None,
         reader: Optional[ICrawlerReader] = None,
         writer: Optional[ICrawlerWriter] = None,
         accounts_service: Optional[Any] = None,
+        jobs_repo: Optional[Any] = None,
+        **kwargs,
     ):
-        self.db_path = db_path
+        self.db_path = Path(db_path) if isinstance(db_path, str) else db_path
         self.timeout = timeout
         self.max_subdomains = max_subdomains
         self.ports = ports or [80, 443, 8080, 8443]
         self.reader = reader or CrawlerReader()
         self.writer = writer or CrawlerWriter()
+        self.jobs_repo = jobs_repo
         self._accounts_service = accounts_service
 
     def set_accounts_service(self, accounts_service: Any) -> None:
@@ -42,8 +46,12 @@ class CrawlerService(ICrawlerService):
 
     def _get_accounts_service(self):
         if not self._accounts_service:
-            from src.services.accounts.accounts_service import default_accounts_service
-            self._accounts_service = default_accounts_service
+            from src.services.accounts.accounts_service import AccountsService, default_accounts_service
+
+            if self.db_path:
+                self._accounts_service = AccountsService(db_path=self.db_path)
+            else:
+                self._accounts_service = default_accounts_service
         return self._accounts_service
 
     def _calculate_next_account_version(self, domain: str) -> tuple[str, str]:
@@ -71,6 +79,40 @@ class CrawlerService(ICrawlerService):
             else:
                 return candidate_key, f"v{v_num}"
 
+    def scan_domain(
+        self,
+        domain: str,
+        scan_depth: str = "standard",
+        scanner_type: str = "standard",
+        enable_subdomains: bool = True,
+        custom_ports: Optional[List[int]] = None,
+        save_to_database: bool = False,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """Alias for crawl_domain to execute domain scan."""
+        return self.crawl_domain(
+            domain=domain,
+            scan_depth=scan_depth,
+            scanner_type=scanner_type,
+            enable_subdomains=enable_subdomains,
+            custom_ports=custom_ports,
+            save_to_database=save_to_database,
+        )
+
+    def _is_domain_resolvable(self, domain: str) -> bool:
+        """Verify if domain or its www prefix resolves via DNS."""
+        try:
+            socket.gethostbyname(domain)
+            return True
+        except (socket.gaierror, socket.herror, Exception):
+            if not domain.startswith("www."):
+                try:
+                    socket.gethostbyname(f"www.{domain}")
+                    return True
+                except Exception:
+                    pass
+            return False
+
     def crawl_domain_with_retries(
         self,
         domain: str,
@@ -92,9 +134,12 @@ class CrawlerService(ICrawlerService):
                     custom_ports=custom_ports,
                     save_to_database=save_to_database,
                 )
+            except ValueError:
+                # Format or resolution validation failure: do not retry
+                raise
             except Exception as e:
                 last_exception = e
-                wait_time = 1.0 * (2 ** attempt)
+                wait_time = 1.0 * (2**attempt)
                 logger.warning(
                     f"Crawl attempt {attempt + 1}/{max_retries} failed for domain '{domain}': {e}. Retrying in {wait_time:.1f}s",
                     domain=domain,
@@ -117,6 +162,10 @@ class CrawlerService(ICrawlerService):
         clean_domain = normalize_domain(domain)
         if not clean_domain:
             raise ValueError("Target domain cannot be empty")
+        if not is_valid_account_domain(clean_domain):
+            raise ValueError(f"Invalid domain format: '{clean_domain}'")
+        if not self._is_domain_resolvable(clean_domain):
+            raise ValueError(f"Domain '{clean_domain}' could not be resolved via DNS or does not exist")
 
         with logger.span("crawler.recon", domain=clean_domain, scan_depth=scan_depth, scanner_type=scanner_type):
             start_time = time.time()
@@ -224,12 +273,14 @@ class CrawlerService(ICrawlerService):
                 total_signals += res.get("signals_detected_count", 0)
             except Exception as e:
                 logger.error(f"Error in crawler job {job_id} for domain {dom}: {e}")
-                results.append({
-                    "domain": dom,
-                    "error": str(e),
-                    "assets_count": 0,
-                    "signals_detected_count": 0,
-                })
+                results.append(
+                    {
+                        "domain": dom,
+                        "error": str(e),
+                        "assets_count": 0,
+                        "signals_detected_count": 0,
+                    }
+                )
 
             progress_cb(
                 idx + 1,

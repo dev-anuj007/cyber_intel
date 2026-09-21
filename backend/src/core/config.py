@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -7,12 +8,18 @@ load_dotenv()
 SRC_DIR = Path(__file__).resolve().parent.parent
 BACKEND_DIR = SRC_DIR.parent
 
-ROOT_DIR = BACKEND_DIR.parent if (BACKEND_DIR.parent / "accounts.db").exists() or (BACKEND_DIR.parent / "frontend").exists() else Path(os.getenv("ROOT_DIR", str(BACKEND_DIR)))
+ROOT_DIR = (
+    BACKEND_DIR.parent
+    if (BACKEND_DIR.parent / "accounts.db").exists() or (BACKEND_DIR.parent / "frontend").exists()
+    else Path(os.getenv("ROOT_DIR", str(BACKEND_DIR)))
+)
 
 # Database & S3 Storage Configuration
 AWS_REGION = os.getenv("AWS_REGION", os.getenv("AWS_DEFAULT_REGION", "ap-south-1"))
 S3_DATABASE_URI = os.getenv("S3_DATABASE_URI", "")
-DB_PATH = Path(os.getenv("DATABASE_PATH", str(ROOT_DIR / "accounts.db" if (ROOT_DIR / "accounts.db").exists() else "accounts.db")))
+DB_PATH = Path(
+    os.getenv("DATABASE_PATH", str(ROOT_DIR / "accounts.db" if (ROOT_DIR / "accounts.db").exists() else "accounts.db"))
+)
 
 JWT_SECRET = os.getenv("JWT_SECRET", "super-secret-sales-intel-jwt-key-2026")
 JWT_ALGORITHM = "HS256"

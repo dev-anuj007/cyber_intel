@@ -1,23 +1,23 @@
 from datetime import datetime
 from typing import Optional
+
 from fastapi import APIRouter, Depends
 
 from src.core.exceptions import InvalidInputError, NotFoundError
+from src.services.accounts.accounts_service import AccountsService, default_accounts_service
+from src.services.auth.api import get_current_user_optional
+from src.services.crawler.crawler_service import CrawlerService, default_crawler_service
 from src.services.crawler.types import (
-    CrawlerRunRequest,
     CrawlerJobSubmitRequest,
+    CrawlerRunRequest,
 )
+from src.services.jobs.jobs_service import JobsService, default_jobs_service
 from src.services.jobs.types import (
-    JobSubmitResponse,
-    JobSummary,
     JobDetail,
     JobListResponse,
     JobStatus,
+    JobSubmitResponse,
 )
-from src.services.crawler.crawler_service import CrawlerService, default_crawler_service
-from src.services.accounts.accounts_service import AccountsService, default_accounts_service
-from src.services.jobs.jobs_service import JobsService, default_jobs_service
-from src.services.auth.api import get_current_user_optional
 from src.services.logger import get_logger
 
 logger = get_logger("crawler.api")
@@ -48,7 +48,9 @@ def submit_crawler_job(
     """Submit an asynchronous domain perimeter scan job to run in the background."""
     crawler.set_accounts_service(accounts_service)
 
-    clean_domains = [d.strip().replace("https://", "").replace("http://", "").rstrip("/") for d in req.domains if d.strip()]
+    clean_domains = [
+        d.strip().replace("https://", "").replace("http://", "").rstrip("/") for d in req.domains if d.strip()
+    ]
     if not clean_domains:
         raise InvalidInputError("At least one target domain is required", code="MISSING_TARGET_DOMAINS")
 
@@ -61,7 +63,7 @@ def submit_crawler_job(
     elif len(clean_domains) <= 3:
         title = f"{', '.join(clean_domains)} Recon"
     else:
-        title = f"{clean_domains[0]}, {clean_domains[1]} (+{len(clean_domains)-2} more)"
+        title = f"{clean_domains[0]}, {clean_domains[1]} (+{len(clean_domains) - 2} more)"
 
     payload = {
         "pipeline_name": req.pipeline_name.strip() if req.pipeline_name else None,
@@ -96,6 +98,7 @@ def submit_crawler_job(
 def list_available_scanners():
     """List all registered security scanner engines (Standard, OWASP ZAP, ProjectDiscovery, CISA KEV)."""
     from src.services.crawler.scanners import ScannerFactory
+
     return {
         "scanners": ScannerFactory.list_available_scanners(),
     }
@@ -184,12 +187,14 @@ def execute_crawler_run(
             results.append(res)
         except Exception as e:
             logger.error(f"Error crawling {clean}: {e}", exc_info=True)
-            results.append({
-                "domain": clean,
-                "error": str(e),
-                "assets_count": 0,
-                "signals_detected_count": 0,
-            })
+            results.append(
+                {
+                    "domain": clean,
+                    "error": str(e),
+                    "assets_count": 0,
+                    "signals_detected_count": 0,
+                }
+            )
 
     return {
         "success": True,
@@ -197,3 +202,14 @@ def execute_crawler_run(
         "results": results,
         "timestamp": datetime.now().isoformat(),
     }
+
+
+@router.post("/scan")
+def scan_domain_endpoint(
+    req: dict,
+    crawler: CrawlerService = Depends(get_crawler_service),
+):
+    domain = req.get("domain", "")
+    scanner_type = req.get("scanner_type", "standard")
+    res = crawler.scan_domain(domain=domain, scanner_type=scanner_type)
+    return {"success": True, "domain": domain, "scanner_type": scanner_type, "result": res}

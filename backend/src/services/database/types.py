@@ -1,8 +1,7 @@
 """Database Service Type Definitions and Interfaces."""
 
-import sqlite3
-from typing import Optional, Dict, Any, List, Protocol, ContextManager
 from dataclasses import dataclass, field
+from typing import Any, ContextManager, Dict, List, Optional, Protocol
 
 
 @dataclass
@@ -45,19 +44,19 @@ class QueryResponse:
 class IDatabaseService(Protocol):
     """Interface for the Database microservice."""
 
-    def get_connection(self) -> ContextManager[sqlite3.Connection]:
-        """Context manager returning an active SQLite connection."""
+    def get_connection(self) -> ContextManager[Any]:
+        """Context manager returning an active database connection."""
         ...
 
-    def execute(self, sql: str, params: Optional[tuple] = None) -> sqlite3.Cursor:
+    def execute(self, sql: str, params: Optional[tuple] = None) -> Any:
         """Execute SQL query."""
         ...
 
-    def fetchone(self, sql: str, params: Optional[tuple] = None) -> Optional[sqlite3.Row]:
+    def fetchone(self, sql: str, params: Optional[tuple] = None) -> Optional[Any]:
         """Execute and fetch a single record."""
         ...
 
-    def fetchall(self, sql: str, params: Optional[tuple] = None) -> List[sqlite3.Row]:
+    def fetchall(self, sql: str, params: Optional[tuple] = None) -> List[Any]:
         """Execute and fetch all matching records."""
         ...
 
@@ -72,3 +71,8 @@ class IDatabaseService(Protocol):
     def init_schema(self) -> None:
         """Initialize relational tables and indices."""
         ...
+
+    def init_database(self) -> None:
+        """Alias to initialize relational tables and indices."""
+        ...
+

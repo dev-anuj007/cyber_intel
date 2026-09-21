@@ -8,16 +8,16 @@ Responsible for:
 
 try:
     from .contracts import (
+        FrontendInfraOutput,
+        MicroservicesInfraOutput,
         ServiceInfraContext,
         ServiceInfraOutput,
         SharedInfraOutput,
-        MicroservicesInfraOutput,
-        FrontendInfraOutput,
     )
-    from .shared import provision_shared_infra
-    from .microservices import provision_microservices_infra
     from .frontend import provision_frontend_infra
     from .main import provision_all_infra
+    from .microservices import provision_microservices_infra
+    from .shared import provision_shared_infra
 
     __all__ = [
         "ServiceInfraContext",
@@ -32,4 +32,3 @@ try:
     ]
 except ImportError:
     __all__ = []
-

@@ -1,13 +1,14 @@
 import os
 from typing import List, Optional
+
 from fastapi import APIRouter, Depends
 
-from src.core.exceptions import InvalidInputError, ExternalServiceError, RateLimitError, NotFoundError
-from src.services.scorer.types import AccountScore, ScoringRequest, LLMStats
-from src.services.scorer.scorer_service import ScorerService, default_scorer_service
+from src.core.exceptions import ExternalServiceError, InvalidInputError, NotFoundError, RateLimitError
 from src.services.accounts.accounts_service import AccountsService, default_accounts_service
 from src.services.auth.api import get_current_user_optional
 from src.services.logger import get_logger
+from src.services.scorer.scorer_service import ScorerService, default_scorer_service
+from src.services.scorer.types import AccountScore, LLMStats, ScoringRequest
 
 logger = get_logger("scorer.api")
 
@@ -33,7 +34,11 @@ def get_user_scorer(
     return ScorerService(api_key=api_key)
 
 
+get_scorer_service = get_user_scorer
+
+
 @router.post("/api/score", response_model=AccountScore)
+@router.post("/api/scorer/score", response_model=AccountScore)
 def score_account(
     request: ScoringRequest,
     scorer: ScorerService = Depends(get_user_scorer),
@@ -42,27 +47,52 @@ def score_account(
     try:
         target_account = request.account
         if not target_account:
+            if not request.account_key:
+                raise InvalidInputError("Either account or account_key must be provided", code="MISSING_ACCOUNT_INPUT")
             target_account = accounts_service.get_account(request.account_key)
             if not target_account:
                 raise NotFoundError(
-                    f"Account '{request.account_key}' not found in platform database", 
-                    code="ACCOUNT_NOT_FOUND"
+                    f"Account '{request.account_key}' not found in platform database", code="ACCOUNT_NOT_FOUND"
                 )
-        return scorer.score_account(target_account)
+        return scorer.score_account(target_account, prompt_version=getattr(request, "prompt_version", None))
     except ValueError as e:
         raise InvalidInputError(message=str(e), code="INVALID_SCORING_INPUT")
     except Exception as e:
         err_str = str(e)
         if "429" in err_str or "quota" in err_str.lower():
-            raise RateLimitError(
-                message="Gemini API rate limit or quota exceeded. Please try again in a few moments."
-            )
+            raise RateLimitError(message="Gemini API rate limit or quota exceeded. Please try again in a few moments.")
         logger.error(f"Error scoring account: {e}")
-        raise ExternalServiceError(
-            message=f"AI Scoring service failure: {str(e)}", 
-            code="SCORER_INFERENCE_FAILURE"
-        )
+        raise ExternalServiceError(message=f"AI Scoring service failure: {str(e)}", code="SCORER_INFERENCE_FAILURE")
 
+
+@router.get("/api/scorer/history/{account_key}")
+@router.get("/api/scores/history/{account_key}")
+def get_scorer_history_endpoint(
+    account_key: str,
+    scorer: ScorerService = Depends(get_user_scorer),
+):
+    history = scorer.get_score_history(account_key)
+    return history
+
+
+@router.get("/api/scorer/latest/{account_key}")
+@router.get("/api/scores/latest/{account_key}")
+def get_scorer_latest_endpoint(
+    account_key: str,
+    scorer: ScorerService = Depends(get_user_scorer),
+):
+    latest = scorer.get_latest_score(account_key)
+    if not latest:
+        return {
+            "account_key": account_key,
+            "score": 0,
+            "priority_tier": "tier_4_low",
+            "version": 0,
+            "key_risks": [],
+            "suggested_outreach": "None",
+            "score_rationale": "No score recorded yet",
+        }
+    return latest
 
 
 @router.post("/api/score/batch", response_model=List[AccountScore])

@@ -1,15 +1,13 @@
-import json
-import sys
-import time
-import os
 import concurrent.futures
-from pathlib import Path
+import json
+import os
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 from src.services.accounts.types import Account, Asset, SecuritySignal, SignalSeverity
-from src.services.scorer.scorer_service import ScorerService as AccountScorer
 from src.services.logger import get_logger
+from src.services.scorer.scorer_service import ScorerService as AccountScorer
 
 logger = get_logger("eval.harness")
 
@@ -62,17 +60,19 @@ class EvalResult:
         if is_consistent:
             self.consistent_tier_count += 1
 
-        self.predictions.append({
-            "expected_tier": expected_tier,
-            "predicted_tier": predicted_tier,
-            "expected_score": expected_score,
-            "predicted_score": predicted_score,
-            "tier_match": expected_tier == predicted_tier,
-            "score_error": score_error,
-            "score_tier_consistent": is_consistent,
-            "key_risks": key_risks if key_risks is not None else [],
-            "suggested_outreach": suggested_outreach if suggested_outreach is not None else "",
-        })
+        self.predictions.append(
+            {
+                "expected_tier": expected_tier,
+                "predicted_tier": predicted_tier,
+                "expected_score": expected_score,
+                "predicted_score": predicted_score,
+                "tier_match": expected_tier == predicted_tier,
+                "score_error": score_error,
+                "score_tier_consistent": is_consistent,
+                "key_risks": key_risks if key_risks is not None else [],
+                "suggested_outreach": suggested_outreach if suggested_outreach is not None else "",
+            }
+        )
 
         if expected_tier == predicted_tier:
             self.correct_tier += 1
@@ -185,10 +185,14 @@ def create_mock_account(eval_example: dict) -> Account:
         account_key=eval_example["account_key"],
         domains=eval_example.get("domains", [eval_example["account_key"].replace("domain:", "")]),
         assets=[
-            Asset(ip=f"192.168.1.{i+10}", port=443 if i == 0 else 8080, hostname=eval_example.get("domains", ["example.com"])[0])
+            Asset(
+                ip=f"192.168.1.{i + 10}",
+                port=443 if i == 0 else 8080,
+                hostname=eval_example.get("domains", ["example.com"])[0],
+            )
             for i in range(num_signals)
         ],
-        ips=[f"192.168.1.{i+10}" for i in range(num_signals)],
+        ips=[f"192.168.1.{i + 10}" for i in range(num_signals)],
         hostnames=eval_example.get("domains", ["example.com"]),
         ports=[443, 8080][:num_signals],
         products=["Apache", "OpenSSL"] if "eol_product" in critical_signal_names else ["Nginx", "Cloudflare"],
@@ -207,6 +211,7 @@ def run_eval(
     api_key: Optional[str] = None,
     custom_prompt_template: Optional[str] = None,
     sample_limit: Optional[int] = None,
+    progress_callback: Optional[Any] = None,
 ) -> dict:
     if eval_set_data and isinstance(eval_set_data, list) and len(eval_set_data) > 0:
         logger.info("Using dynamic evaluation dataset provided in request", sample_count=len(eval_set_data))
@@ -228,6 +233,8 @@ def run_eval(
     if sample_limit is not None and sample_limit > 0:
         eval_set = eval_set[:sample_limit]
 
+    total_samples = len(eval_set)
+
     version_label = prompt_version
     if custom_prompt_template and not prompt_version.startswith("custom"):
         version_label = f"custom-{prompt_version}"
@@ -236,14 +243,16 @@ def run_eval(
     scorer = None
 
     if not skip_scoring:
-        effective_key = api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
+        effective_key = (
+            api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
+        )
         if not effective_key:
             logger.warning("GEMINI_API_KEY not found; running in dry-run mode.")
             skip_scoring = True
         else:
             scorer = AccountScorer(api_key=effective_key, prompt_version=prompt_version)
 
-    def process_example(example: dict) -> dict:
+    def process_example(idx: int, example: dict) -> Tuple[int, dict]:
         account = create_mock_account(example)
         expected_tier = example["expected_tier"]
         expected_score = example["expected_score"]
@@ -269,7 +278,7 @@ def run_eval(
                     pred_score = 62
                     pred_tier = "tier_3_medium"
 
-            return {
+            return idx, {
                 "expected_tier": expected_tier,
                 "predicted_tier": pred_tier,
                 "expected_score": expected_score,
@@ -278,44 +287,71 @@ def run_eval(
                 "suggested_outreach": "Simulated outreach recommendation tailored to risk profile",
             }
         else:
-            max_retries = 3
-            backoff = 2.0
-            for attempt in range(max_retries):
-                try:
-                    score = scorer.score_account(
-                        account,
-                        prompt_version=prompt_version,
-                        custom_prompt_template=custom_prompt_template,
-                    )
-                    return {
-                        "expected_tier": expected_tier,
-                        "predicted_tier": score.priority_tier.value,
-                        "expected_score": expected_score,
-                        "predicted_score": score.score,
-                        "key_risks": score.key_risks,
-                        "suggested_outreach": score.suggested_outreach,
-                    }
-                except Exception as e:
-                    err_str = str(e).lower()
-                    if ("429" in err_str or "resource_exhausted" in err_str or "rate" in err_str) and attempt < max_retries - 1:
-                        time.sleep(backoff * (attempt + 1))
-                        continue
-                    logger.error("Error scoring account", account=account.account_key, error=str(e))
-                    return {
-                        "expected_tier": expected_tier,
-                        "predicted_tier": "tier_3_medium",
-                        "expected_score": expected_score,
-                        "predicted_score": 50,
-                        "key_risks": [],
-                        "suggested_outreach": "",
-                    }
+            try:
+                score = scorer.score_account(
+                    account,
+                    prompt_version=prompt_version,
+                    custom_prompt_template=custom_prompt_template,
+                    save_to_db=False,
+                )
+                return idx, {
+                    "expected_tier": expected_tier,
+                    "predicted_tier": score.priority_tier.value,
+                    "expected_score": expected_score,
+                    "predicted_score": score.score,
+                    "key_risks": score.key_risks,
+                    "suggested_outreach": score.suggested_outreach,
+                }
+            except Exception as e:
+                logger.error("Error scoring account", account=account.account_key, error=str(e))
+                return idx, {
+                    "expected_tier": expected_tier,
+                    "predicted_tier": "tier_3_medium",
+                    "expected_score": expected_score,
+                    "predicted_score": 50,
+                    "key_risks": ["Error during live inference"],
+                    "suggested_outreach": "Manual review required",
+                }
 
     # Parallelize evaluation with optimal concurrency
-    max_workers = 10 if (skip_scoring or scorer is None) else 5
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        predictions = list(executor.map(process_example, eval_set))
+    max_workers = min(total_samples, 12) if (skip_scoring or scorer is None) else min(total_samples, 3)
+    if max_workers < 1:
+        max_workers = 1
 
-    for p in predictions:
+    completed_count = 0
+    predictions_map: Dict[int, dict] = {}
+
+    if progress_callback and total_samples > 0:
+        try:
+            progress_callback(0, total_samples, {"prompt_version": version_label, "status": "running"}, None)
+        except Exception as cb_err:
+            logger.debug(f"Progress callback initial notification error: {cb_err}")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(process_example, i, ex) for i, ex in enumerate(eval_set)]
+        for fut in concurrent.futures.as_completed(futures):
+            idx, p = fut.result()
+            predictions_map[idx] = p
+            completed_count += 1
+            if progress_callback and total_samples > 0:
+                try:
+                    progress_callback(
+                        completed_count,
+                        total_samples,
+                        {
+                            "prompt_version": version_label,
+                            "completed_cases": completed_count,
+                            "total_cases": total_samples,
+                        },
+                        None,
+                    )
+                except Exception as cb_err:
+                    logger.debug(f"Progress callback update error: {cb_err}")
+
+    # Restore deterministic original dataset ordering
+    ordered_predictions = [predictions_map[i] for i in range(total_samples)]
+
+    for p in ordered_predictions:
         result.add_prediction(
             expected_tier=p["expected_tier"],
             predicted_tier=p["predicted_tier"],
@@ -364,11 +400,11 @@ def generate_comparison_dict(v1_results: dict, v2_results: dict) -> dict:
         delta = val_v2 - val_v1
         sign = "+" if delta > 0 else ""
         if is_pct:
-            delta_str = f"{sign}{delta*100:.1f}%"
+            delta_str = f"{sign}{delta * 100:.1f}%"
         else:
             delta_str = f"{sign}{delta:.2f}"
 
-        improved = (delta < 0 if lower_is_better else delta > 0)
+        improved = delta < 0 if lower_is_better else delta > 0
         status = "improved" if improved else ("regressed" if delta != 0 else "unchanged")
         return {
             "val_a": val_v1,
@@ -382,14 +418,42 @@ def generate_comparison_dict(v1_results: dict, v2_results: dict) -> dict:
         }
 
     metrics = [
-        {"name": "Tier Allocation Accuracy", **calc_delta(v2_results.get('tier_accuracy', 0), v1_results.get('tier_accuracy', 0), is_pct=True)},
-        {"name": "Macro F1-Score", **calc_delta(v2_results.get('macro_f1', 0), v1_results.get('macro_f1', 0))},
-        {"name": "Weighted F1-Score", **calc_delta(v2_results.get('weighted_f1', 0), v1_results.get('weighted_f1', 0))},
-        {"name": "Critical Threat Recall", **calc_delta(v2_results.get('critical_threat_recall', 1.0), v1_results.get('critical_threat_recall', 1.0), is_pct=True)},
-        {"name": "Score-to-Tier Consistency", **calc_delta(v2_results.get('score_tier_consistency', 0), v1_results.get('score_tier_consistency', 0), is_pct=True)},
-        {"name": "Score MAE (Mean Error)", **calc_delta(v2_results.get('score_mae', 0), v1_results.get('score_mae', 0), lower_is_better=True)},
-        {"name": "Score RMSE", **calc_delta(v2_results.get('score_rmse', 0), v1_results.get('score_rmse', 0), lower_is_better=True)},
-        {"name": "Accuracy within +/-5 Pts", **calc_delta(v2_results.get('within_5_points_pct', 0)/100, v1_results.get('within_5_points_pct', 0)/100, is_pct=True)},
+        {
+            "name": "Tier Allocation Accuracy",
+            **calc_delta(v2_results.get("tier_accuracy", 0), v1_results.get("tier_accuracy", 0), is_pct=True),
+        },
+        {"name": "Macro F1-Score", **calc_delta(v2_results.get("macro_f1", 0), v1_results.get("macro_f1", 0))},
+        {"name": "Weighted F1-Score", **calc_delta(v2_results.get("weighted_f1", 0), v1_results.get("weighted_f1", 0))},
+        {
+            "name": "Critical Threat Recall",
+            **calc_delta(
+                v2_results.get("critical_threat_recall", 1.0),
+                v1_results.get("critical_threat_recall", 1.0),
+                is_pct=True,
+            ),
+        },
+        {
+            "name": "Score-to-Tier Consistency",
+            **calc_delta(
+                v2_results.get("score_tier_consistency", 0), v1_results.get("score_tier_consistency", 0), is_pct=True
+            ),
+        },
+        {
+            "name": "Score MAE (Mean Error)",
+            **calc_delta(v2_results.get("score_mae", 0), v1_results.get("score_mae", 0), lower_is_better=True),
+        },
+        {
+            "name": "Score RMSE",
+            **calc_delta(v2_results.get("score_rmse", 0), v1_results.get("score_rmse", 0), lower_is_better=True),
+        },
+        {
+            "name": "Accuracy within +/-5 Pts",
+            **calc_delta(
+                v2_results.get("within_5_points_pct", 0) / 100,
+                v1_results.get("within_5_points_pct", 0) / 100,
+                is_pct=True,
+            ),
+        },
     ]
 
     tier_comparisons = {}
@@ -414,16 +478,21 @@ def generate_comparison_dict(v1_results: dict, v2_results: dict) -> dict:
     for i in range(min(len(preds_a), len(preds_b))):
         pa = preds_a[i]
         pb = preds_b[i]
-        if pa.get("predicted_tier") != pb.get("predicted_tier") or abs(pa.get("predicted_score", 0) - pb.get("predicted_score", 0)) > 3:
-            prediction_diffs.append({
-                "index": i + 1,
-                "expected_tier": pa.get("expected_tier"),
-                "expected_score": pa.get("expected_score"),
-                "pred_tier_a": pa.get("predicted_tier"),
-                "pred_score_a": pa.get("predicted_score"),
-                "pred_tier_b": pb.get("predicted_tier"),
-                "pred_score_b": pb.get("predicted_score"),
-            })
+        if (
+            pa.get("predicted_tier") != pb.get("predicted_tier")
+            or abs(pa.get("predicted_score", 0) - pb.get("predicted_score", 0)) > 3
+        ):
+            prediction_diffs.append(
+                {
+                    "index": i + 1,
+                    "expected_tier": pa.get("expected_tier"),
+                    "expected_score": pa.get("expected_score"),
+                    "pred_tier_a": pa.get("predicted_tier"),
+                    "pred_score_a": pa.get("predicted_score"),
+                    "pred_tier_b": pb.get("predicted_tier"),
+                    "pred_score_b": pb.get("predicted_score"),
+                }
+            )
 
     return {
         "prompt_a": v1_ver,
@@ -446,12 +515,16 @@ def print_metrics_summary(results: dict):
     print(f" Score-to-Tier Consistency:       {results['score_tier_consistency']:.1%}")
     print(f" Score MAE (Mean Error):          {results['score_mae']:.2f} points")
     print(f" Score RMSE:                      {results['score_rmse']:.2f} points")
-    print(f" Accuracy within +/-5 Points:     {results['within_5_points']}/{results['total']} ({results['within_5_points_pct']}%)")
+    print(
+        f" Accuracy within +/-5 Points:     {results['within_5_points']}/{results['total']} ({results['within_5_points_pct']}%)"
+    )
     print("-" * 74)
     print(f" {'Tier':<18} | {'Precision':<10} | {'Recall':<10} | {'F1-Score':<10} | {'Support':<7}")
     print("-" * 74)
     for tier, m in results.get("tier_metrics", {}).items():
-        print(f" {tier:<18} | {m['precision']:<10.3f} | {m['recall']:<10.3f} | {m['f1_score']:<10.3f} | {m['support']:<7}")
+        print(
+            f" {tier:<18} | {m['precision']:<10.3f} | {m['recall']:<10.3f} | {m['f1_score']:<10.3f} | {m['support']:<7}"
+        )
     print("=" * 74 + "\n")
 
 
@@ -466,9 +539,9 @@ def compare_runs(v1_results: dict, v2_results: dict):
     print(f" {'Metric':<28} | {v1_ver:<14} | {v2_ver:<14} | {'Delta':<16}")
     print("-" * 80)
     for m in comp["metrics"]:
-        val_a = f"{m['val_a']*100:.1f}%" if m['is_pct'] else f"{m['val_a']:.2f}"
-        val_b = f"{m['val_b']*100:.1f}%" if m['is_pct'] else f"{m['val_b']:.2f}"
-        marker = "[+]" if m['improved'] else ("[-]" if m['status'] == "regressed" else "[=]")
+        val_a = f"{m['val_a'] * 100:.1f}%" if m["is_pct"] else f"{m['val_a']:.2f}"
+        val_b = f"{m['val_b'] * 100:.1f}%" if m["is_pct"] else f"{m['val_b']:.2f}"
+        marker = "[+]" if m["improved"] else ("[-]" if m["status"] == "regressed" else "[=]")
         print(f" {m['name']:<28} | {val_a:<14} | {val_b:<14} | {m['delta_str']} {marker}")
     print("=" * 80 + "\n")
 

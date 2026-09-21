@@ -1,10 +1,10 @@
-from mangum import Mangum
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from src.services.prompts.api import router as prompts_router
+from mangum import Mangum
 
-from src.services.logger import get_logger, UserJourneyMiddleware
 from src.core.config import LOGFIRE_TOKEN
+from src.services.logger import UserJourneyMiddleware
+from src.services.prompts.api import router as prompts_router
 
 app = FastAPI(
     title="Prompt Registry Microservice",
@@ -24,6 +24,7 @@ app.add_middleware(UserJourneyMiddleware)
 if LOGFIRE_TOKEN:
     try:
         import logfire
+
         logfire.instrument_fastapi(app)
     except Exception:
         pass

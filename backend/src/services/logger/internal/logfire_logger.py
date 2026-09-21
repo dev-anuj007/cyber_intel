@@ -1,21 +1,21 @@
-import os
-import time
 import queue
 import threading
+import time
 import traceback
 from contextlib import contextmanager
-from typing import Any, Dict, Optional, Callable
+from typing import Any, Callable, Dict, Optional
 
 try:
     import logfire
+
     _LOGFIRE_AVAILABLE = True
 except ImportError:
     _LOGFIRE_AVAILABLE = False
     logfire = None
 
-from src.core.config import LOGFIRE_TOKEN, SERVICE_NAME, ENVIRONMENT
-from src.services.logger.internal.base_logger import BaseLogger
+from src.core.config import ENVIRONMENT, LOGFIRE_TOKEN, SERVICE_NAME
 from src.services.logger.context import get_current_trace_id
+from src.services.logger.internal.base_logger import BaseLogger
 
 _LOGFIRE_INITIALIZED = False
 
@@ -98,10 +98,16 @@ def init_logfire_client(token: Optional[str] = None, service_name: Optional[str]
 
 
 class LogfireLogger(BaseLogger):
-    def __init__(self, name: str = "app", extra: Optional[Dict[str, Any]] = None):
-        super().__init__(name=name, extra=extra)
+    def __init__(
+        self,
+        name: str = "app",
+        extra: Optional[Dict[str, Any]] = None,
+        service_name: Optional[str] = None,
+        **kwargs,
+    ):
+        super().__init__(name=name, extra=extra, service_name=service_name, **kwargs)
         if not _LOGFIRE_INITIALIZED:
-            init_logfire_client()
+            init_logfire_client(service_name=service_name or name)
 
     def _prepare_attributes(self, **kwargs) -> Dict[str, Any]:
         attrs = self.get_context()
@@ -160,7 +166,7 @@ class LogfireLogger(BaseLogger):
         attrs = self._prepare_attributes(**kwargs)
         span_title = f"{self.name}.{name}"
         start_time = time.perf_counter()
-        
+
         try:
             yield
             dur = (time.perf_counter() - start_time) * 1000

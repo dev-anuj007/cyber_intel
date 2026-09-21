@@ -1,20 +1,20 @@
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.core.config import ENVIRONMENT, LOGFIRE_TOKEN
-from src.services.database import init_database
-from src.core.dependencies import init_core_services, get_accounts_service, get_database_service
+from src.core.dependencies import get_accounts_service, get_database_service, init_core_services
 from src.core.error_handlers import register_error_handlers
-from src.services.logger import get_logger, UserJourneyMiddleware
-from src.services.database import database_router
-from src.services.jobs import jobs_router, default_jobs_service
-from src.services.auth import auth_router
 from src.services.accounts import accounts_router
-from src.services.scorer import scorer_router
+from src.services.auth import auth_router
 from src.services.crawler import crawler_router
+from src.services.database import database_router, init_database
 from src.services.eval import eval_router
+from src.services.jobs import default_jobs_service, jobs_router
+from src.services.logger import UserJourneyMiddleware, get_logger
 from src.services.prompts import prompts_router
+from src.services.scorer import scorer_router
 
 logger = get_logger("gateway")
 
@@ -61,6 +61,7 @@ app.add_middleware(UserJourneyMiddleware)
 if LOGFIRE_TOKEN:
     try:
         import logfire
+
         logfire.instrument_fastapi(app)
         logger.info("Logfire FastAPI instrumentation active")
     except Exception as e:
@@ -109,4 +110,3 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run("src.main:app", host="0.0.0.0", port=8000, reload=True)
-

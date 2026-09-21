@@ -1,6 +1,7 @@
 import axios, { AxiosInstance } from "axios";
 import {
   Account,
+  AccountVersionSummary,
   AccountScore,
   SummaryStats,
   LLMStats,
@@ -10,6 +11,8 @@ import {
   BackgroundJobListResponse,
   JobSubmitResponse,
   ScannerEngineInfo,
+  PromptTemplateInfo,
+  PromptRegisterRequest,
 } from "./types";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
@@ -106,9 +109,17 @@ class APIClient {
     return response.data;
   }
 
-  async getAccount(accountKey: string): Promise<Account> {
-    const response = await this.client.get<Account>(`/accounts/${encodeURIComponent(accountKey)}`);
+  async getAccount(accountKey: string, version?: string): Promise<Account> {
+    const params = version ? { version } : {};
+    const response = await this.client.get<Account>(`/accounts/${encodeURIComponent(accountKey)}`, { params });
     return response.data;
+  }
+
+  async getAccountVersions(accountKey: string): Promise<AccountVersionSummary[]> {
+    const response = await this.client.get<{ account_key: string; total_versions: number; versions: AccountVersionSummary[] }>(
+      `/accounts/${encodeURIComponent(accountKey)}/versions`
+    );
+    return response.data?.versions || [];
   }
 
   async scoreAccount(accountOrKey: Account | string): Promise<AccountScore> {
@@ -132,8 +143,9 @@ class APIClient {
     return response.data;
   }
 
-  async getScoreHistory(accountKey: string): Promise<any> {
-    const response = await this.client.get(`/accounts/${encodeURIComponent(accountKey)}/score-history`);
+  async getScoreHistory(accountKey: string, version?: string): Promise<any> {
+    const params = version ? { version } : {};
+    const response = await this.client.get(`/accounts/${encodeURIComponent(accountKey)}/score-history`, { params });
     return response.data;
   }
 
@@ -152,8 +164,28 @@ class APIClient {
   }
 
   // Developer & Eval Harness Methods
-  async getEvalPrompts(): Promise<{ prompts: any[] }> {
+  async getEvalPrompts(): Promise<{ prompts: PromptTemplateInfo[] }> {
     const response = await this.client.get("/eval/prompts");
+    return response.data;
+  }
+
+  async listPrompts(): Promise<{ prompts: PromptTemplateInfo[] }> {
+    const response = await this.client.get("/prompts");
+    return response.data;
+  }
+
+  async getPrompt(name: string, version: string): Promise<PromptTemplateInfo> {
+    const response = await this.client.get(`/prompts/${encodeURIComponent(name)}/${encodeURIComponent(version)}`);
+    return response.data;
+  }
+
+  async registerPrompt(data: PromptRegisterRequest): Promise<PromptTemplateInfo> {
+    const response = await this.client.post("/prompts", data);
+    return response.data;
+  }
+
+  async deletePrompt(name: string, version: string): Promise<{ success: boolean; message: string }> {
+    const response = await this.client.delete(`/prompts/${encodeURIComponent(name)}/${encodeURIComponent(version)}`);
     return response.data;
   }
 

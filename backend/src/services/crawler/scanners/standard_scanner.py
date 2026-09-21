@@ -1,9 +1,9 @@
+import concurrent.futures
 import socket
 import ssl
-import urllib.request
 import urllib.error
-import concurrent.futures
-from typing import List, Dict, Any, Optional, Set, TypedDict
+import urllib.request
+from typing import Any, Dict, List, Optional, Set, TypedDict
 
 from src.services.accounts.types import Asset, SecuritySignal
 from src.services.aggregator.aggregator_service import (
@@ -11,14 +11,28 @@ from src.services.aggregator.aggregator_service import (
     is_dynamic_ip_ptr,
     normalize_domain,
 )
-from src.services.crawler.scanners.base import IScanner, ScanResult
+from src.services.crawler.scanners.base import ScanResult
 from src.services.logger import get_logger
 
 logger = get_logger("crawler.scanners.standard")
 
 COMMON_SUBDOMAINS = [
-    "www", "api", "app", "dev", "staging", "admin", "portal", "mail",
-    "vpn", "auth", "login", "dashboard", "secure", "cdn", "cloud", "beta"
+    "www",
+    "api",
+    "app",
+    "dev",
+    "staging",
+    "admin",
+    "portal",
+    "mail",
+    "vpn",
+    "auth",
+    "login",
+    "dashboard",
+    "secure",
+    "cdn",
+    "cloud",
+    "beta",
 ]
 
 DEFAULT_PORTS = [80, 443, 8080, 8443, 3000, 5000, 22, 21, 3389, 8000, 9000]
@@ -137,7 +151,11 @@ class StandardCrawlerScanner:
         enable_subdomains = options.get("enable_subdomains", True)
         ports_to_scan = options.get("custom_ports") or self.ports
 
-        discovered_hosts = [clean_domain]
+        discovered_hosts: List[str] = []
+        root_ip = self.resolve_ip(clean_domain)
+        if root_ip:
+            discovered_hosts.append(clean_domain)
+
         if enable_subdomains:
             subs_to_test = COMMON_SUBDOMAINS[: self.max_subdomains]
             with concurrent.futures.ThreadPoolExecutor(max_workers=min(16, len(subs_to_test))) as executor:
@@ -149,13 +167,29 @@ class StandardCrawlerScanner:
                     sub_host = future_to_host[future]
                     try:
                         sub_ip = future.result()
-                        if sub_ip and not is_dynamic_ip_ptr(sub_host):
+                        if sub_ip and not is_dynamic_ip_ptr(sub_host) and sub_host not in discovered_hosts:
                             discovered_hosts.append(sub_host)
                     except Exception:
                         pass
 
+        if not discovered_hosts and not root_ip:
+            return ScanResult(
+                domain=clean_domain,
+                scanner_type=self.scanner_type,
+                assets=[],
+                signals=[],
+                ips=[],
+                hostnames=[],
+                ports=[],
+                products=[],
+                cloud_providers=[],
+                metadata={"engine": "standard_network_crawler", "resolved": False},
+            )
+
         assets: List[Asset] = []
         unique_ips: Set[str] = set()
+        if root_ip:
+            unique_ips.add(root_ip)
         unique_ports: Set[int] = set()
         products: Set[str] = set()
         cloud_providers: Set[str] = set()
@@ -177,14 +211,16 @@ class StandardCrawlerScanner:
         probe_tasks = []
         for host in discovered_hosts:
             ip = host_to_ip.get(host)
-            target_addr = ip or host
+            if not ip:
+                continue
+            target_addr = ip
             for port in ports_to_scan:
                 probe_tasks.append((host, ip, target_addr, port))
 
         def probe_worker(item) -> Optional[ProbeResult]:
             h, ip_addr, target, p = item
             is_open = self.check_port_open(target, p)
-            if is_open or p in (80, 443):
+            if is_open:
                 banner = self.probe_http_banner(h, p)
                 return {
                     "host": h,
@@ -242,9 +278,7 @@ class StandardCrawlerScanner:
                     signal_keys.add(s_key)
                     signals.append(s)
 
-        if not assets:
-            root_ip = self.resolve_ip(clean_domain) or "0.0.0.0"
-            unique_ips.add(root_ip)
+        if not assets and root_ip:
             assets.append(Asset(ip=root_ip, port=443, hostname=clean_domain))
             unique_ports.add(443)
 
@@ -254,9 +288,9 @@ class StandardCrawlerScanner:
             assets=assets,
             signals=signals,
             ips=list(unique_ips),
-            hostnames=discovered_hosts,
+            hostnames=discovered_hosts or ([clean_domain] if root_ip else []),
             ports=list(unique_ports),
-            products=list(products) or ["Web Service"],
-            cloud_providers=list(cloud_providers) or ["Cloud Infrastructure"],
+            products=list(products),
+            cloud_providers=list(cloud_providers),
             metadata={"engine": "standard_network_crawler"},
         )

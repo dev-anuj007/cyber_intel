@@ -1,16 +1,17 @@
 from typing import Optional
+
 from fastapi import APIRouter, Depends
 
-from src.core.exceptions import NotFoundError, InvalidInputError
+from src.core.exceptions import InvalidInputError, NotFoundError
+from src.services.auth.api import get_current_user_optional
+from src.services.jobs.jobs_service import JobsService, default_jobs_service
 from src.services.jobs.types import (
-    JobSubmitRequest,
-    JobSubmitResponse,
-    JobSummary,
     JobDetail,
     JobListResponse,
+    JobStatus,
+    JobSubmitRequest,
+    JobSubmitResponse,
 )
-from src.services.jobs.jobs_service import JobsService, default_jobs_service
-from src.services.auth.api import get_current_user_optional
 
 router = APIRouter(prefix="/api/jobs", tags=["Background Jobs"])
 
@@ -19,7 +20,9 @@ def get_jobs_service() -> JobsService:
     return default_jobs_service
 
 
-@router.post("/submit", response_model=JobSubmitResponse, status_code=202)
+@router.post("", response_model=JobSubmitResponse, status_code=200)
+@router.post("/", response_model=JobSubmitResponse, status_code=200)
+@router.post("/submit", response_model=JobSubmitResponse, status_code=200)
 def submit_job(
     req: JobSubmitRequest,
     current_user: Optional[dict] = Depends(get_current_user_optional),
@@ -30,9 +33,10 @@ def submit_job(
         raise InvalidInputError("Job type is required", code="MISSING_JOB_TYPE")
 
     user_id = current_user.get("id") if current_user else None
+    title = (req.title or "").strip() or f"{req.job_type.strip()} Task"
     job_id = jobs_service.submit_job(
         job_type=req.job_type.strip(),
-        title=req.title.strip() or f"{req.job_type.strip()} Task",
+        title=title,
         payload=req.payload,
         user_id=user_id,
         max_retries=req.max_retries,
@@ -43,7 +47,7 @@ def submit_job(
         success=True,
         job_id=job_id,
         job_type=req.job_type.strip(),
-        status="queued",
+        status=JobStatus.QUEUED,
         message="Background job queued successfully",
     )
 
@@ -95,8 +99,18 @@ def retry_job(
             success=True,
             job_id=retried_id,
             job_type="background_job",
-            status="queued",
+            status=JobStatus.QUEUED,
             message="Job queued for retry",
         )
     except LookupError as e:
         raise NotFoundError(str(e), code="JOB_NOT_FOUND")
+
+
+@router.post("/{job_id}/cancel")
+def cancel_job(
+    job_id: str,
+    jobs_service: JobsService = Depends(get_jobs_service),
+):
+    """Cancel a pending or running background job."""
+    jobs_service.cancel_job(job_id)
+    return {"success": True, "job_id": job_id, "status": "cancelled"}

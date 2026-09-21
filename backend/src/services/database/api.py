@@ -1,12 +1,13 @@
 """Database Microservice Network Layer - FastAPI APIRouter."""
 
 import time
+from typing import Any, Dict, List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
-from typing import List, Any, Optional, Dict
 
-from src.services.database.types import DatabaseHealth, DatabaseStats
 from src.services.database.database_service import DatabaseService
+from src.services.database.types import DatabaseHealth, DatabaseStats
 from src.services.logger import get_logger
 
 logger = get_logger("services.database.api")
@@ -71,7 +72,11 @@ def database_stats(db: DatabaseService = Depends(get_db_service)):
 def execute_query(payload: QueryPayload, db: DatabaseService = Depends(get_db_service)):
     """Executes a safe read-only SQL query across microservices."""
     normalized_sql = payload.sql.strip().lower()
-    if not normalized_sql.startswith("select") and not normalized_sql.startswith("pragma") and not normalized_sql.startswith("explain"):
+    if (
+        not normalized_sql.startswith("select")
+        and not normalized_sql.startswith("pragma")
+        and not normalized_sql.startswith("explain")
+    ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Only read-only queries (SELECT, PRAGMA, EXPLAIN) are permitted through this API endpoint.",

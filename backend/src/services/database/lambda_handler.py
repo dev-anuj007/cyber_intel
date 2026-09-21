@@ -7,10 +7,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
 
-from src.services.database.api import router as database_router, get_db_service
-from src.core.error_handlers import register_error_handlers
-from src.services.logger import get_logger, UserJourneyMiddleware
 from src.core.config import LOGFIRE_TOKEN
+from src.core.error_handlers import register_error_handlers
+from src.services.database.api import get_db_service
+from src.services.database.api import router as database_router
+from src.services.logger import UserJourneyMiddleware, get_logger
 
 logger = get_logger("services.database.lambda")
 
@@ -35,6 +36,7 @@ app.add_middleware(UserJourneyMiddleware)
 if LOGFIRE_TOKEN:
     try:
         import logfire
+
         logfire.instrument_fastapi(app)
     except Exception:
         pass

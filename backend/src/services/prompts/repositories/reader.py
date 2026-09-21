@@ -1,4 +1,5 @@
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
+
 from src.services.prompts.prompt_types import IPromptRepository
 from src.services.prompts.templates import CANONICAL_PROMPTS_LIST, get_prompt_template
 
@@ -42,3 +43,14 @@ class LocalPromptRepository(IPromptRepository):
         }
         self._prompts[f"{name}:{version}"] = item
         return item
+
+    def delete_prompt(self, name: str, version: str) -> bool:
+        key = f"{name}:{version}"
+        if key in self._prompts:
+            del self._prompts[key]
+            return True
+        for k, p in list(self._prompts.items()):
+            if p.get("version") == version and (p.get("name") == name or not name):
+                del self._prompts[k]
+                return True
+        return False
