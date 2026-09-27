@@ -14,11 +14,17 @@ def provision_service_infra(ctx: ServiceInfraContext) -> ServiceInfraOutput:
         role=ctx.lambda_role_arn,
         package_type="Image",
         image_uri=ctx.get_image_uri(service_name),
-        image_config=aws.lambda_.FunctionImageConfigArgs(commands=["src.services.prompts.lambda_handler.handler"]),
+        image_config=aws.lambda_.FunctionImageConfigArgs(
+            commands=["src.services.prompts.lambda_handler.handler"]
+        ),
         memory_size=512,
         timeout=30,
         environment=aws.lambda_.FunctionEnvironmentArgs(variables=ctx.common_env_vars),
-        tags={"Environment": ctx.environment, "App": ctx.app_name, "Service": service_name},
+        tags={
+            "Environment": ctx.environment,
+            "App": ctx.app_name,
+            "Service": service_name,
+        },
     )
 
     integration = aws.apigatewayv2.Integration(
@@ -34,7 +40,9 @@ def provision_service_infra(ctx: ServiceInfraContext) -> ServiceInfraOutput:
         action="lambda:InvokeFunction",
         function=prompts_lambda.name,
         principal="apigateway.amazonaws.com",
-        source_arn=pulumi.Output.all(ctx.http_api_execution_arn).apply(lambda args: f"{args[0]}/*/*"),
+        source_arn=pulumi.Output.all(ctx.http_api_execution_arn).apply(
+            lambda args: f"{args[0]}/*/*"
+        ),
     )
 
     route_keys = [
@@ -45,7 +53,13 @@ def provision_service_infra(ctx: ServiceInfraContext) -> ServiceInfraOutput:
 
     routes = []
     for idx, r_key in enumerate(route_keys):
-        clean_key = r_key.replace(" ", "-").replace("/", "-").replace("{", "").replace("}", "").replace("+", "")
+        clean_key = (
+            r_key.replace(" ", "-")
+            .replace("/", "-")
+            .replace("{", "")
+            .replace("}", "")
+            .replace("+", "")
+        )
         route = aws.apigatewayv2.Route(
             f"{name_prefix}-route-{idx}-{clean_key}",
             api_id=ctx.http_api_id,

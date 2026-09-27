@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from src.services.logger.logger_service import BaseLogger, get_logger
 from src.services.prompts.internals.repositories.reader import PromptReader
@@ -10,10 +10,10 @@ from src.services.prompts.protocols import (
     IPromptService,
     IPromptWriter,
 )
-
+from src.services.prompts.types import PromptItem
 
 if TYPE_CHECKING:
-    from src.services.prompts.prompt_service import PromptService
+    pass
 
 
 @dataclass
@@ -28,11 +28,14 @@ def get_prompt_dependency_context(
     writer: Optional[IPromptWriter] = None,
     logger: Optional[BaseLogger] = None,
 ) -> PromptServiceDependencyContext:
-    shared_store = None
+    shared_store: Optional[Dict[str, PromptItem]] = None
     if reader is None and writer is None:
-        from src.services.prompts.templates import CANONICAL_PROMPTS_LIST
+        from src.services.prompts.templates import CANONICAL_PROMPTS_DICT
 
-        shared_store = {f"{p['name']}:{p['version']}": p.copy() for p in CANONICAL_PROMPTS_LIST}
+        shared_store = {
+            f"{p['name']}:{p['version']}": PromptItem.model_validate(p)
+            for p in CANONICAL_PROMPTS_DICT
+        }
     return PromptServiceDependencyContext(
         reader=reader or PromptReader(memory_store=shared_store),
         writer=writer or PromptWriter(memory_store=shared_store),
@@ -51,11 +54,15 @@ def create_prompt_service(
     context: Optional[PromptServiceDependencyContext] = None,
     reader: Optional[IPromptReader] = None,
     writer: Optional[IPromptWriter] = None,
+    logger: Optional[BaseLogger] = None,
 ) -> IPromptService:
     from src.services.prompts.prompt_service import PromptService
 
-    return PromptService(context or get_prompt_dependency_context(reader=reader, writer=writer))
-
+    if context is not None:
+        return PromptService(context)
+    return PromptService(
+        get_prompt_dependency_context(reader=reader, writer=writer, logger=logger)
+    )
 
 
 class _LazyPromptServiceProxy:
@@ -64,4 +71,3 @@ class _LazyPromptServiceProxy:
 
 
 default_prompt_service: IPromptService = _LazyPromptServiceProxy()  # type: ignore
-

@@ -7,11 +7,12 @@ from fastapi.testclient import TestClient
 from src.services.prompts.api import get_prompt_service, router
 from src.services.prompts.dependencies import (
     create_prompt_service,
-    get_prompt_dependency_context,
 )
-from src.services.prompts.prompt_service import PromptService
-from src.services.prompts.protocols import IPromptReader, IPromptService, IPromptWriter
-from src.services.prompts.templates import CANONICAL_PROMPTS_LIST, get_prompt_template
+from src.services.prompts.templates import (
+    CANONICAL_PROMPTS_DICT,
+    get_prompt_template,
+)
+from src.services.prompts.types import PromptItem
 
 
 @pytest.fixture
@@ -22,18 +23,21 @@ def prompt_service():
 def test_list_and_get_prompts(prompt_service):
     prompts = prompt_service.list_prompts()
     assert len(prompts) >= 3
-    versions = [p["version"] for p in prompts]
+    versions = [p.version for p in prompts]
     assert "v2.0" in versions
     assert "v1.0" in versions
 
     # Get existing
     p = prompt_service.get_prompt("account_scoring", "v2.0")
     assert p is not None
-    assert p["version"] == "v2.0"
+    assert p.version == "v2.0"
+    assert "tier_1_critical" in p.template
 
-    # Get non-existing
-    p_none = prompt_service.get_prompt("nonexistent", "v99.0")
-    assert p_none is not None
+    # Get non-existing fallback
+    p_fallback = prompt_service.get_prompt("nonexistent", "v99.0")
+    assert p_fallback is not None
+    assert p_fallback.name == "nonexistent"
+    assert p_fallback.version == "v99.0"
 
 
 def test_get_templates_and_canonical():
@@ -48,7 +52,7 @@ def test_get_templates_and_canonical():
     t_def = get_prompt_template("unknown_version")
     assert "{account_context}" in t_def
 
-    assert len(CANONICAL_PROMPTS_LIST) >= 2
+    assert len(CANONICAL_PROMPTS_DICT) >= 2
 
 
 def test_register_prompt(prompt_service):
@@ -57,11 +61,15 @@ def test_register_prompt(prompt_service):
         version="v3.0-custom",
         template="Custom prompt: {account_context}",
         prompt_type="scoring",
+        description="Custom calibrated prompt.",
     )
-    assert registered["version"] == "v3.0-custom"
+    assert isinstance(registered, PromptItem)
+    assert registered.version == "v3.0-custom"
+    assert registered.description == "Custom calibrated prompt."
+
     fetched = prompt_service.get_prompt("account_scoring", "v3.0-custom")
     assert fetched is not None
-    assert fetched["template"] == "Custom prompt: {account_context}"
+    assert fetched.template == "Custom prompt: {account_context}"
 
 
 def test_prompts_api_endpoints(prompt_service):
@@ -74,19 +82,27 @@ def test_prompts_api_endpoints(prompt_service):
     r = client.get("/api/prompts")
     assert r.status_code == 200
     data = r.json()
-    prompts_list = data["prompts"] if isinstance(data, dict) and "prompts" in data else data
+    prompts_list = (
+        data["prompts"] if isinstance(data, dict) and "prompts" in data else data
+    )
     assert len(prompts_list) >= 3
 
     # Get
     r = client.get("/api/prompts/account_scoring/v2.0")
     assert r.status_code == 200
+    assert r.json()["version"] == "v2.0"
 
     # Register
     r = client.post(
         "/api/prompts",
-        json={"name": "account_scoring", "version": "v5.0-test", "template": "Test {account_context}"},
+        json={
+            "name": "account_scoring",
+            "version": "v5.0-test",
+            "template": "Test {account_context}",
+        },
     )
     assert r.status_code == 200
+    assert r.json()["version"] == "v5.0-test"
 
     # Delete custom prompt
     r = client.delete("/api/prompts/account_scoring/v5.0-test")
@@ -101,7 +117,6 @@ def test_prompts_api_endpoints(prompt_service):
 
 
 def test_delete_prompt_service(prompt_service):
-    # Register and delete
     prompt_service.register_prompt(
         name="test_prompt",
         version="v1.0-del",

@@ -109,29 +109,35 @@ PROMPT_TEMPLATES: Dict[str, str] = {
     "outreach_draft_v1.0": OUTREACH_DRAFT_V1,
 }
 
-CANONICAL_PROMPTS_LIST: List[Dict[str, Any]] = [
+CANONICAL_PROMPTS_DICT: List[Dict[str, Any]] = [
     {
         "filename": "account_scoring_v2.0.txt",
-        "name": "account_scoring_v2.0",
+        "name": "account_scoring",
         "version": "v2.0",
         "type": "scoring",
         "template": ACCOUNT_SCORING_V2,
+        "description": "Production calibrated cybersecurity risk scoring prompt with strict anti-hallucination guardrails.",
     },
     {
         "filename": "account_scoring_v1.0.txt",
-        "name": "account_scoring_v1.0",
+        "name": "account_scoring",
         "version": "v1.0",
         "type": "scoring",
         "template": ACCOUNT_SCORING_V1,
+        "description": "Legacy baseline risk scoring prompt.",
     },
     {
         "filename": "outreach_draft_v1.0.txt",
-        "name": "outreach_draft_v1.0",
+        "name": "outreach_draft",
         "version": "v1.0",
         "type": "outreach",
         "template": OUTREACH_DRAFT_V1,
+        "description": "Executive SDR cold email generator grounded in security signals.",
     },
 ]
+
+# For backwards compatibility
+CANONICAL_PROMPTS_LIST = CANONICAL_PROMPTS_DICT
 
 
 def get_prompt_template(version: str = "v2.0") -> str:

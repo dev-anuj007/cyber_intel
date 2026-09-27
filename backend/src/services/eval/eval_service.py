@@ -55,7 +55,7 @@ class EvalService(IEvalService):
             self.results_dir = Path("/tmp/evals/results")
             self.results_dir.mkdir(parents=True, exist_ok=True)
 
-    def list_prompts(self) -> List[Dict[str, Any]]:
+    def list_prompts(self) -> List[Any]:
         return self._get_prompt_service().list_prompts()
 
     def get_default_dataset(self) -> List[Dict[str, Any]]:

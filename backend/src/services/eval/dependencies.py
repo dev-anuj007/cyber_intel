@@ -78,7 +78,7 @@ def get_eval_service() -> IEvalService:
 
 
 class _LazyEvalServiceProxy(IEvalService):
-    def list_prompts(self) -> List[Dict[str, Any]]:
+    def list_prompts(self) -> List[Any]:
         return get_eval_service().list_prompts()
 
     def get_default_dataset(self) -> List[Dict[str, Any]]:
