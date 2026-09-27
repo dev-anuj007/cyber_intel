@@ -45,7 +45,9 @@ class CisaKevScanner:
         except Exception:
             ip = None
 
-        assets: List[Asset] = [Asset(ip=ip, port=443, hostname=clean_domain)] if ip else []
+        assets: List[Asset] = (
+            [Asset(ip=ip, port=443, hostname=clean_domain)] if ip else []
+        )
         signals: List[SecuritySignal] = []
         products: Set[str] = set()
         cloud_providers: Set[str] = set()
@@ -54,13 +56,17 @@ class CisaKevScanner:
 
         all_text_fingerprints: List[str] = []
         user_agent = {"User-Agent": "CISA-KEV-Threat-Audit/1.0"}
-        async with httpx.AsyncClient(verify=False, timeout=timeout, follow_redirects=True) as client:
+        async with httpx.AsyncClient(
+            verify=False, timeout=timeout, follow_redirects=True
+        ) as client:
             try:
                 resp = await client.get(
                     f"https://{clean_domain}",
                     headers=user_agent,
                 )
-                headers_str = " ".join([f"{k}:{v}" for k, v in resp.headers.items()]).lower()
+                headers_str = " ".join(
+                    [f"{k}:{v}" for k, v in resp.headers.items()]
+                ).lower()
                 all_text_fingerprints.append(headers_str)
                 all_text_fingerprints.append(resp.text[:2000].lower())
                 srv = resp.headers.get("server", "")
@@ -72,7 +78,9 @@ class CisaKevScanner:
                         f"http://{clean_domain}",
                         headers=user_agent,
                     )
-                    headers_str = " ".join([f"{k}:{v}" for k, v in resp.headers.items()]).lower()
+                    headers_str = " ".join(
+                        [f"{k}:{v}" for k, v in resp.headers.items()]
+                    ).lower()
                     all_text_fingerprints.append(headers_str)
                     all_text_fingerprints.append(resp.text[:2000].lower())
                     srv = resp.headers.get("server", "")
@@ -142,5 +150,7 @@ class CisaKevScanner:
             import concurrent.futures
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                return pool.submit(asyncio.run, self.scan_async(domain, options)).result()
+                return pool.submit(
+                    asyncio.run, self.scan_async(domain, options)
+                ).result()
         return asyncio.run(self.scan_async(domain, options))

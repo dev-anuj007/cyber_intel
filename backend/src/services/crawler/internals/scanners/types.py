@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Optional, TypedDict
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.services.accounts.types import Asset, SecuritySignal, SignalSeverity
 
@@ -50,15 +50,17 @@ class ScannerEngineOptions(BaseModel):
 
 
 class ScanResult(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="ignore")
+
     domain: str
     scanner_type: str
-    assets: List[Asset] = []
-    signals: List[SecuritySignal] = []
-    ips: List[str] = []
-    hostnames: List[str] = []
-    ports: List[int] = []
-    products: List[str] = []
-    cloud_providers: List[str] = []
-    vulnerabilities: List[VulnerabilityFinding] = []
-    cves: List[str] = []
-    metadata: Dict[str, Any] = {}
+    assets: List[Asset] = Field(default_factory=list)
+    signals: List[SecuritySignal] = Field(default_factory=list)
+    ips: List[str] = Field(default_factory=list)
+    hostnames: List[str] = Field(default_factory=list)
+    ports: List[int] = Field(default_factory=list)
+    products: List[str] = Field(default_factory=list)
+    cloud_providers: List[str] = Field(default_factory=list)
+    vulnerabilities: List[VulnerabilityFinding] = Field(default_factory=list)
+    cves: List[str] = Field(default_factory=list)
+    metadata: Dict[str, Any] = Field(default_factory=dict)

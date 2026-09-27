@@ -1,11 +1,17 @@
-from typing import Any, Tuple
+from typing import Tuple
+
+from src.services.accounts.protocols import IAccountsService
 
 
 class AccountVersionCalculator:
     @staticmethod
-    def calculate_next_version(accounts_service: Any, domain: str) -> Tuple[str, str]:
+    def calculate_next_version(
+        accounts_service: IAccountsService, domain: str
+    ) -> Tuple[str, str]:
         base_key = f"domain:{domain}"
-        existing_v1 = accounts_service.get_account(base_key) or accounts_service.get_account(domain)
+        existing_v1 = accounts_service.get_account(
+            base_key
+        ) or accounts_service.get_account(domain)
         if not existing_v1:
             return base_key, "v1"
 

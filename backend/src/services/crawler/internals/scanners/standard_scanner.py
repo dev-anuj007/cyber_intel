@@ -6,11 +6,12 @@ import urllib.request
 from typing import Any, Dict, List, Optional, Set
 
 from src.services.accounts.types import Asset, SecuritySignal
-from src.services.aggregator.aggregator_service import AggregatorService
+from src.services.aggregator.dependencies import get_aggregator_service
 from src.services.aggregator.internals.domain_utils import (
     is_dynamic_ip_ptr,
     normalize_domain,
 )
+from src.services.aggregator.protocols import IAggregatorService
 from src.services.crawler.internals.scanners.constants import (
     CLOUD_SIGNATURES,
     COMMON_SUBDOMAINS,
@@ -36,13 +37,15 @@ class StandardCrawlerScanner:
         timeout: float = 0.8,
         max_subdomains: int = 12,
         ports: Optional[List[int]] = None,
-        aggregator_service: Optional[AggregatorService] = None,
+        aggregator_service: Optional[IAggregatorService] = None,
         logger: Optional[BaseLogger] = None,
     ):
         self.timeout = timeout
         self.max_subdomains = max_subdomains
         self.ports = ports or [80, 443, 8080, 8443]
-        self.aggregator_service = aggregator_service or AggregatorService()
+        self.aggregator_service: IAggregatorService = (
+            aggregator_service or get_aggregator_service()
+        )
         self._logger = logger or get_logger("crawler.scanners.standard")
 
     async def scan_async(
@@ -68,7 +71,9 @@ class StandardCrawlerScanner:
                 sub_ip = await asyncio.to_thread(self._resolve_ip, sub_host)
                 return sub_host, sub_ip
 
-            sub_results = await asyncio.gather(*[resolve_sub(s) for s in subs_to_test], return_exceptions=True)
+            sub_results = await asyncio.gather(
+                *[resolve_sub(s) for s in subs_to_test], return_exceptions=True
+            )
             for item in sub_results:
                 if isinstance(item, tuple):
                     sub_host, sub_ip = item
@@ -108,7 +113,9 @@ class StandardCrawlerScanner:
             resolved = await asyncio.to_thread(self._resolve_ip, h)
             return h, resolved
 
-        host_results = await asyncio.gather(*[resolve_host(h) for h in discovered_hosts], return_exceptions=True)
+        host_results = await asyncio.gather(
+            *[resolve_host(h) for h in discovered_hosts], return_exceptions=True
+        )
         for item in host_results:
             if isinstance(item, tuple):
                 h, resolved = item
@@ -147,7 +154,9 @@ class StandardCrawlerScanner:
                 p_port: int = res["port"]
                 p_host: str = res["host"]
                 p_ip: Optional[str] = res["ip"]
-                p_banner: Dict[str, Any] = res["banner"] if isinstance(res.get("banner"), dict) else {}
+                p_banner: Dict[str, Any] = (
+                    res["banner"] if isinstance(res.get("banner"), dict) else {}
+                )
 
                 unique_ports.add(p_port)
                 assets.append(Asset(ip=p_ip, port=p_port, hostname=p_host))
@@ -180,7 +189,11 @@ class StandardCrawlerScanner:
         for rec in records_for_signals:
             detected = self.aggregator_service.detect_signals(rec)
             for s in detected:
-                s_sev = s.severity.value if hasattr(s.severity, "value") else str(s.severity)
+                s_sev = (
+                    s.severity.value
+                    if hasattr(s.severity, "value")
+                    else str(s.severity)
+                )
                 s_key = (s.name, s_sev, s.evidence)
                 if s_key not in signal_keys:
                     signal_keys.add(s_key)
@@ -217,7 +230,9 @@ class StandardCrawlerScanner:
             import concurrent.futures
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                return pool.submit(asyncio.run, self.scan_async(domain, options)).result()
+                return pool.submit(
+                    asyncio.run, self.scan_async(domain, options)
+                ).result()
         return asyncio.run(self.scan_async(domain, options))
 
     def _resolve_ip(self, host: str) -> Optional[str]:
@@ -257,12 +272,16 @@ class StandardCrawlerScanner:
         req = urllib.request.Request(
             url,
             headers={
-                "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) SalesIntelBot/2.0"),
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) SalesIntelBot/2.0"
+                ),
                 "Accept": "*/*",
             },
         )
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout + 0.4, context=ctx) as response:
+            with urllib.request.urlopen(
+                req, timeout=self.timeout + 0.4, context=ctx
+            ) as response:
                 banner["status"] = response.status
                 headers = {k.lower(): v for k, v in response.headers.items()}
                 server_hdr = headers.get("server", "")
@@ -272,7 +291,9 @@ class StandardCrawlerScanner:
                 if powered_by:
                     banner["technologies"].append(powered_by)
 
-                all_headers_str = " ".join([f"{k}:{v}" for k, v in headers.items()]).lower()
+                all_headers_str = " ".join(
+                    [f"{k}:{v}" for k, v in headers.items()]
+                ).lower()
                 for provider, sigs in CLOUD_SIGNATURES.items():
                     if any(sig in all_headers_str for sig in sigs):
                         banner["cloud_providers"].append(provider)

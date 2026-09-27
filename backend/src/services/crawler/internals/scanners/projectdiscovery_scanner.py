@@ -62,12 +62,18 @@ class ProjectDiscoveryScanner:
 
                 def run_subfinder():
                     cmd = ["subfinder", "-d", clean_domain, "-silent"]
-                    return subprocess.run(cmd, capture_output=True, text=True, timeout=8)
+                    return subprocess.run(
+                        cmd, capture_output=True, text=True, timeout=8
+                    )
 
                 proc = await asyncio.to_thread(run_subfinder)
                 for line in proc.stdout.splitlines():
                     sub = line.strip().lower()
-                    if sub and sub.endswith(clean_domain) and sub not in discovered_subdomains:
+                    if (
+                        sub
+                        and sub.endswith(clean_domain)
+                        and sub not in discovered_subdomains
+                    ):
                         discovered_subdomains.append(sub)
             except Exception as e:
                 self._logger.warning(f"Subfinder CLI execution error: {e}")
@@ -134,7 +140,9 @@ class ProjectDiscoveryScanner:
                                 name="Exposed Administrative Remote Port (SSH/RDP)",
                                 severity=SignalSeverity.CRITICAL,
                                 category="perimeter",
-                                evidence=(f"Port {p} ({proto_name}) is exposed publicly on {h} ({ip})."),
+                                evidence=(
+                                    f"Port {p} ({proto_name}) is exposed publicly on {h} ({ip})."
+                                ),
                             )
                         )
                         vulnerabilities.append(
@@ -152,11 +160,15 @@ class ProjectDiscoveryScanner:
                                 name="Exposed Database Port (Redis/MongoDB)",
                                 severity=SignalSeverity.CRITICAL,
                                 category="database",
-                                evidence=(f"Database port {p} accessible from public WAN on {h} ({ip})."),
+                                evidence=(
+                                    f"Database port {p} accessible from public WAN on {h} ({ip})."
+                                ),
                             )
                         )
 
-        async with httpx.AsyncClient(verify=False, timeout=timeout, follow_redirects=True) as client:
+        async with httpx.AsyncClient(
+            verify=False, timeout=timeout, follow_redirects=True
+        ) as client:
             for h in discovered_subdomains[:5]:
                 for scheme in ("https", "http"):
                     try:
@@ -170,7 +182,10 @@ class ProjectDiscoveryScanner:
                             products.add(srv)
                         if "cloudflare" in str(headers).lower():
                             cloud_providers.add("Cloudflare")
-                        if "aws" in str(headers).lower() or "amz-" in str(headers).lower():
+                        if (
+                            "aws" in str(headers).lower()
+                            or "amz-" in str(headers).lower()
+                        ):
                             cloud_providers.add("AWS")
                         break
                     except Exception:
@@ -187,7 +202,9 @@ class ProjectDiscoveryScanner:
                         "-silent",
                         "-jsonl",
                     ]
-                    return subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+                    return subprocess.run(
+                        cmd, capture_output=True, text=True, timeout=10
+                    )
 
                 proc = await asyncio.to_thread(run_nuclei)
                 for line in proc.stdout.splitlines():
@@ -262,7 +279,9 @@ class ProjectDiscoveryScanner:
             import concurrent.futures
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                return pool.submit(asyncio.run, self.scan_async(domain, options)).result()
+                return pool.submit(
+                    asyncio.run, self.scan_async(domain, options)
+                ).result()
         return asyncio.run(self.scan_async(domain, options))
 
     def _extract_tls_sans(self, domain: str) -> List[str]:
@@ -278,7 +297,9 @@ class ProjectDiscoveryScanner:
                         for entry in cert["subjectAltName"]:
                             if isinstance(entry, tuple) and len(entry) >= 2:
                                 typ, val = str(entry[0]), str(entry[1])
-                                is_domain_match = val.endswith(f".{domain}") or val == domain
+                                is_domain_match = (
+                                    val.endswith(f".{domain}") or val == domain
+                                )
                                 if typ == "DNS" and is_domain_match:
                                     sans.add(val.lower())
         except Exception:

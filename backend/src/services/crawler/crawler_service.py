@@ -1,13 +1,15 @@
 import asyncio
 import time
-from typing import Callable, Optional, Tuple
+from typing import Callable, Tuple
 
 from src.services.accounts.protocols import IAccountsService
 from src.services.accounts.types import Account
-from src.services.aggregator.internals.domain_utils import is_valid_account_domain, normalize_domain
+from src.services.aggregator.internals.domain_utils import (
+    is_valid_account_domain,
+    normalize_domain,
+)
 from src.services.crawler.dependencies import (
     CrawlerServiceDependencyContext,
-    get_crawler_dependency_context,
 )
 from src.services.crawler.internals.dns import is_domain_resolvable
 from src.services.crawler.internals.scanners.types import ScannerEngineOptions
@@ -22,8 +24,8 @@ from src.services.crawler.types import (
 
 
 class CrawlerService(ICrawlerService):
-    def __init__(self, context: Optional[CrawlerServiceDependencyContext] = None):
-        self._context = context or get_crawler_dependency_context()
+    def __init__(self, context: CrawlerServiceDependencyContext) -> None:
+        self.context: CrawlerServiceDependencyContext = context
 
     def scan_domain(self, request: CrawlerScanRequest) -> CrawlerScanResult:
         return self.crawl_domain(request)
@@ -41,10 +43,14 @@ class CrawlerService(ICrawlerService):
             import concurrent.futures
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                return pool.submit(asyncio.run, self.crawl_domain_async(request)).result()
+                return pool.submit(
+                    asyncio.run, self.crawl_domain_async(request)
+                ).result()
         return asyncio.run(self.crawl_domain_async(request))
 
-    async def crawl_domain_async(self, request: CrawlerScanRequest) -> CrawlerScanResult:
+    async def crawl_domain_async(
+        self, request: CrawlerScanRequest
+    ) -> CrawlerScanResult:
         clean_domain = normalize_domain(request.domain)
 
         if not clean_domain:
@@ -52,9 +58,11 @@ class CrawlerService(ICrawlerService):
         if not is_valid_account_domain(clean_domain):
             raise ValueError(f"Invalid domain format: '{clean_domain}'")
         if not await asyncio.to_thread(self._is_domain_resolvable, clean_domain):
-            raise ValueError(f"Domain '{clean_domain}' could not be resolved via DNS or does not exist")
+            raise ValueError(
+                f"Domain '{clean_domain}' could not be resolved via DNS or does not exist"
+            )
 
-        with self._context.logger.span(
+        with self.context.logger.span(
             "crawler.recon",
             domain=clean_domain,
             scan_depth=request.scan_depth,
@@ -66,27 +74,29 @@ class CrawlerService(ICrawlerService):
                 scan_depth=request.scan_depth,
                 enable_subdomains=request.enable_subdomains,
                 custom_ports=request.custom_ports,
-                timeout=self._context.timeout,
+                timeout=self.context.timeout,
             )
 
-            if hasattr(self._context.scanner_factory, "run_scan_async"):
-                scan_res = await self._context.scanner_factory.run_scan_async(
+            if hasattr(self.context.scanner_factory, "run_scan_async"):
+                scan_res = await self.context.scanner_factory.run_scan_async(
                     domain=clean_domain,
                     scanner_type=request.scanner_type,
                     options=scan_options,
-                    logger=self._context.logger,
+                    logger=self.context.logger,
                 )
             else:
                 scan_res = await asyncio.to_thread(
-                    self._context.scanner_factory.run_scan,
+                    self.context.scanner_factory.run_scan,
                     clean_domain,
                     request.scanner_type,
                     scan_options,
-                    self._context.logger,
+                    self.context.logger,
                 )
 
             elapsed_ms = int((time.time() - start_time) * 1000)
-            account_key, version_tag = await asyncio.to_thread(self._calculate_next_account_version, clean_domain)
+            account_key, version_tag = await asyncio.to_thread(
+                self._calculate_next_account_version, clean_domain
+            )
 
             account = Account(
                 account_key=account_key,
@@ -103,10 +113,9 @@ class CrawlerService(ICrawlerService):
             )
 
             if request.save_to_database:
-                await asyncio.to_thread(self._context.accounts_service.save_account, account)
-
-            account_signals = [s.model_dump() if hasattr(s, "model_dump") else s.dict() for s in account.signals]
-            account_dict = account.model_dump() if hasattr(account, "model_dump") else account.dict()
+                await asyncio.to_thread(
+                    self.context.accounts_service.save_account, account
+                )
 
             scan_result = CrawlerScanResult(
                 domain=clean_domain,
@@ -125,11 +134,11 @@ class CrawlerService(ICrawlerService):
                 vulnerabilities_count=len(scan_res.vulnerabilities),
                 vulnerabilities=scan_res.vulnerabilities,
                 cves=scan_res.cves,
-                signals=account_signals,
-                account=account_dict,
+                signals=account.signals,
+                account=account,
             )
 
-            self._context.logger.info(
+            self.context.logger.info(
                 "Crawler reconnaissance completed",
                 domain=clean_domain,
                 account_key=account_key,
@@ -178,7 +187,7 @@ class CrawlerService(ICrawlerService):
                     f"Crawl attempt {attempt + 1}/{max_retries} failed for domain "
                     f"'{request.domain}': {e}. Retrying in {wait_time:.1f}s"
                 )
-                self._context.logger.warning(
+                self.context.logger.warning(
                     log_msg,
                     domain=request.domain,
                     attempt=attempt + 1,
@@ -186,7 +195,9 @@ class CrawlerService(ICrawlerService):
                 )
                 await asyncio.sleep(wait_time)
 
-        err_msg = f"Crawl failed for domain '{request.domain}' after {max_retries} attempts"
+        err_msg = (
+            f"Crawl failed for domain '{request.domain}' after {max_retries} attempts"
+        )
         raise last_exception or RuntimeError(err_msg)
 
     def handle_crawler_job_scan(
@@ -208,7 +219,9 @@ class CrawlerService(ICrawlerService):
                     asyncio.run,
                     self.handle_crawler_job_scan_async(job_id, request, progress_cb),
                 ).result()
-        return asyncio.run(self.handle_crawler_job_scan_async(job_id, request, progress_cb))
+        return asyncio.run(
+            self.handle_crawler_job_scan_async(job_id, request, progress_cb)
+        )
 
     async def handle_crawler_job_scan_async(
         self,
@@ -216,7 +229,7 @@ class CrawlerService(ICrawlerService):
         request: CrawlerRunRequest,
         progress_cb: Callable[..., None],
     ) -> CrawlerBatchResult:
-        results = []
+        results: list[CrawlerScanResult] = []
         total_assets = 0
         total_signals = 0
 
@@ -234,18 +247,23 @@ class CrawlerService(ICrawlerService):
                     domain_scan_req,
                     max_retries=3,
                 )
-                results.append(scan_res.model_dump())
+                results.append(scan_res)
                 total_assets += scan_res.assets_count
                 total_signals += scan_res.signals_detected_count
             except Exception as e:
-                self._context.logger.error(f"Error in crawler job {job_id} for domain {dom}: {e}")
+                self.context.logger.error(
+                    f"Error in crawler job {job_id} for domain {dom}: {e}"
+                )
                 results.append(
-                    {
-                        "domain": dom,
-                        "error": str(e),
-                        "assets_count": 0,
-                        "signals_detected_count": 0,
-                    }
+                    CrawlerScanResult(
+                        domain=dom,
+                        account_key=f"domain:{dom}",
+                        version="v1",
+                        scanner_type=request.scanner_type,
+                        scan_depth=request.scan_depth,
+                        elapsed_ms=0,
+                        error=str(e),
+                    )
                 )
 
             progress_cb(
@@ -258,7 +276,7 @@ class CrawlerService(ICrawlerService):
                     "scan_depth": request.scan_depth,
                     "scanner_type": request.scanner_type,
                 },
-                partial_results=results,
+                partial_results=[r.model_dump() for r in results],
             )
 
         return CrawlerBatchResult(
@@ -273,11 +291,15 @@ class CrawlerService(ICrawlerService):
         )
 
     def set_accounts_service(self, accounts_service: IAccountsService) -> None:
-        self._context.accounts_service = accounts_service
+        self.context.accounts_service = accounts_service
+
+    # -------------------------------------------------------------------------
+    # Internal / Private Helper Methods
+    # -------------------------------------------------------------------------
 
     def _calculate_next_account_version(self, domain: str) -> Tuple[str, str]:
-        return self._context.version_calculator.calculate_next_version(
-            self._context.accounts_service,
+        return self.context.version_calculator.calculate_next_version(
+            self.context.accounts_service,
             domain,
         )
 

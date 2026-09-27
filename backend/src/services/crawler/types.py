@@ -1,7 +1,8 @@
-from typing import Any, Dict, List, Optional, Union
+from typing import List, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
+from src.services.accounts.types import Account, SecuritySignal
 from src.services.crawler.internals.scanners.types import (
     ScannerCatalogItem,
     VulnerabilityFinding,
@@ -9,6 +10,8 @@ from src.services.crawler.internals.scanners.types import (
 
 
 class CrawlerScanRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     domain: str
     scan_depth: str = "standard"
     scanner_type: str = "standard"
@@ -18,6 +21,8 @@ class CrawlerScanRequest(BaseModel):
 
 
 class CrawlerRunRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     domains: List[str]
     scan_depth: str = "standard"
     scanner_type: str = "all"
@@ -27,6 +32,8 @@ class CrawlerRunRequest(BaseModel):
 
 
 class CrawlerJobSubmitRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     domains: List[str]
     pipeline_name: Optional[str] = None
     scan_depth: str = "standard"
@@ -37,6 +44,8 @@ class CrawlerJobSubmitRequest(BaseModel):
 
 
 class CrawlerJobSubmitResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     success: bool
     job_id: str
     status: str
@@ -46,7 +55,7 @@ class CrawlerJobSubmitResponse(BaseModel):
 
 
 class CrawlerScanResult(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="ignore")
 
     domain: str
     account_key: str
@@ -54,26 +63,30 @@ class CrawlerScanResult(BaseModel):
     scanner_type: str
     scan_depth: str
     elapsed_ms: int
-    discovered_hosts: List[str] = []
+    discovered_hosts: List[str] = Field(default_factory=list)
     assets_count: int = 0
     ips_count: int = 0
-    ports_discovered: List[int] = []
-    technologies: List[str] = []
-    cloud_providers: List[str] = []
+    ports_discovered: List[int] = Field(default_factory=list)
+    technologies: List[str] = Field(default_factory=list)
+    cloud_providers: List[str] = Field(default_factory=list)
     signals_detected_count: int = 0
     vulnerabilities_count: int = 0
-    vulnerabilities: List[Union[VulnerabilityFinding, Dict[str, Any], str]] = []
-    cves: List[str] = []
-    signals: List[Dict[str, Any]] = []
-    account: Optional[Dict[str, Any]] = None
+    vulnerabilities: List[VulnerabilityFinding] = Field(default_factory=list)
+    cves: List[str] = Field(default_factory=list)
+    signals: List[SecuritySignal] = Field(default_factory=list)
+    account: Optional[Account] = None
     error: Optional[str] = None
 
 
 class CrawlerScannersResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     scanners: List[ScannerCatalogItem]
 
 
 class CrawlerSingleScanResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     success: bool
     domain: str
     scanner_type: str
@@ -81,13 +94,17 @@ class CrawlerSingleScanResponse(BaseModel):
 
 
 class CrawlerRunResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     success: bool
     total_crawled: int
-    results: List[Dict[str, Any]]
+    results: List[CrawlerScanResult] = Field(default_factory=list)
     timestamp: str
 
 
 class CrawlerBatchMetadata(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     assets_discovered_count: int = 0
     signals_detected_count: int = 0
     domains_count: int = 0
@@ -96,5 +113,7 @@ class CrawlerBatchMetadata(BaseModel):
 
 
 class CrawlerBatchResult(BaseModel):
-    results: List[Dict[str, Any]]
+    model_config = ConfigDict(extra="ignore")
+
+    results: List[CrawlerScanResult] = Field(default_factory=list)
     metadata: CrawlerBatchMetadata

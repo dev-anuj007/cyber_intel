@@ -13,6 +13,7 @@ from src.services.crawler.types import (
     CrawlerRunResponse,
     CrawlerScannersResponse,
     CrawlerScanRequest,
+    CrawlerScanResult,
     CrawlerSingleScanResponse,
 )
 from src.services.jobs.dependencies import get_jobs_service
@@ -40,10 +41,14 @@ async def submit_crawler_job(
     jobs_service: IJobsService = Depends(get_jobs_service),
 ):
     clean_domains = [
-        d.strip().replace("https://", "").replace("http://", "").rstrip("/") for d in req.domains if d.strip()
+        d.strip().replace("https://", "").replace("http://", "").rstrip("/")
+        for d in req.domains
+        if d.strip()
     ]
     if not clean_domains:
-        raise InvalidInputError("At least one target domain is required", code="MISSING_TARGET_DOMAINS")
+        raise InvalidInputError(
+            "At least one target domain is required", code="MISSING_TARGET_DOMAINS"
+        )
 
     user_id = current_user.get("id") if current_user else None
 
@@ -54,7 +59,9 @@ async def submit_crawler_job(
     elif len(clean_domains) <= 3:
         title = f"{', '.join(clean_domains)} Recon"
     else:
-        title = f"{clean_domains[0]}, {clean_domains[1]} (+{len(clean_domains) - 2} more)"
+        title = (
+            f"{clean_domains[0]}, {clean_domains[1]} (+{len(clean_domains) - 2} more)"
+        )
 
     payload = {
         "pipeline_name": req.pipeline_name.strip() if req.pipeline_name else None,
@@ -154,9 +161,12 @@ async def execute_crawler_run(
     crawler: ICrawlerService = Depends(get_crawler_service),
 ):
     if not req.domains:
-        raise InvalidInputError("At least one target domain is required", code="MISSING_TARGET_DOMAINS")
+        raise InvalidInputError(
+            "At least one target domain is required",
+            code="MISSING_TARGET_DOMAINS",
+        )
 
-    results = []
+    results: list[CrawlerScanResult] = []
 
     for raw_dom in req.domains:
         clean = raw_dom.strip()
@@ -173,16 +183,19 @@ async def execute_crawler_run(
                 save_to_database=req.save_to_database,
             )
             res = await crawler.crawl_domain_async(domain_req)
-            results.append(res.model_dump() if hasattr(res, "model_dump") else res)
+            results.append(res)
         except Exception as e:
             logger.error(f"Error crawling {clean}: {e}", exc_info=True)
             results.append(
-                {
-                    "domain": clean,
-                    "error": str(e),
-                    "assets_count": 0,
-                    "signals_detected_count": 0,
-                }
+                CrawlerScanResult(
+                    domain=clean,
+                    account_key=f"domain:{clean}",
+                    version="v1",
+                    scanner_type=req.scanner_type or "all",
+                    scan_depth=req.scan_depth,
+                    elapsed_ms=0,
+                    error=str(e),
+                )
             )
 
     return CrawlerRunResponse(
@@ -205,4 +218,3 @@ async def scan_domain_endpoint(
         scanner_type=req.scanner_type,
         result=res,
     )
-

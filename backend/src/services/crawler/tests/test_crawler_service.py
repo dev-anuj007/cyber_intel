@@ -65,7 +65,9 @@ def test_standard_scanner_mocked():
     scanner = StandardCrawlerScanner()
     with (
         patch("socket.gethostbyname", return_value="93.184.216.34"),
-        patch("socket.gethostbyaddr", return_value=("example.com", [], ["93.184.216.34"])),
+        patch(
+            "socket.gethostbyaddr", return_value=("example.com", [], ["93.184.216.34"])
+        ),
     ):
         results = scanner.scan("example.com")
         assert results is not None
@@ -106,14 +108,18 @@ def test_scanner_factory_run_scan():
 
 def test_async_scanner_factory_and_scanners():
     with patch("socket.gethostbyname", return_value="8.8.8.8"):
-        result = asyncio.run(ScannerFactory.run_scan_async("allscanners.com", scanner_type="all"))
+        result = asyncio.run(
+            ScannerFactory.run_scan_async("allscanners.com", scanner_type="all")
+        )
         assert result is not None
         assert result.domain == "allscanners.com"
 
 
 def test_crawler_service_scan_domain(crawler_service):
     with patch("socket.gethostbyname", return_value="1.2.3.4"):
-        result = crawler_service.scan_domain(CrawlerScanRequest(domain="scanme.org", scanner_type="standard"))
+        result = crawler_service.scan_domain(
+            CrawlerScanRequest(domain="scanme.org", scanner_type="standard")
+        )
         assert result is not None
         assert result.domain == "scanme.org"
 
@@ -127,11 +133,16 @@ def test_crawler_api_endpoints(crawler_service, jobs_service):
 
     r = client.get("/api/crawler/scanners")
     assert r.status_code == 200
-    scanners = r.json().get("scanners", r.json()) if isinstance(r.json(), dict) else r.json()
+    scanners = (
+        r.json().get("scanners", r.json()) if isinstance(r.json(), dict) else r.json()
+    )
     assert len(scanners) >= 4
 
     with patch("socket.gethostbyname", return_value="1.2.3.4"):
-        r = client.post("/api/crawler/scan", json={"domain": "apicrawl.com", "scanner_type": "standard"})
+        r = client.post(
+            "/api/crawler/scan",
+            json={"domain": "apicrawl.com", "scanner_type": "standard"},
+        )
         assert r.status_code == 200
         data = r.json()
         assert data["success"] is True
@@ -157,7 +168,9 @@ def test_crawler_api_endpoints(crawler_service, jobs_service):
 
 
 def test_crawler_invalid_domain_raises_error(crawler_service):
-    with pytest.raises(ValueError, match="could not be resolved via DNS or does not exist"):
+    with pytest.raises(
+        ValueError, match="could not be resolved via DNS or does not exist"
+    ):
         crawler_service.crawl_domain(CrawlerScanRequest(domain="hjhjkjhkjhkhk.com"))
 
 
@@ -166,11 +179,15 @@ def test_crawler_job_handles_invalid_domain_cleanly(crawler_service):
     res = crawler_service.handle_crawler_job_scan(
         job_id="job-test-invalid",
         request=CrawlerRunRequest(
-            domains=["invalid-fake-domain-12345.xyz"], scanner_type="all", save_to_database=False
+            domains=["invalid-fake-domain-12345.xyz"],
+            scanner_type="all",
+            save_to_database=False,
         ),
-        progress_cb=lambda cur, tot, metadata=None, partial_results=None: progress_calls.append(cur),
+        progress_cb=lambda cur, tot, metadata=None, partial_results=None: (
+            progress_calls.append(cur)
+        ),
     )
     assert len(res.results) == 1
-    assert res.results[0]["assets_count"] == 0
-    assert res.results[0]["signals_detected_count"] == 0
-    assert "could not be resolved" in res.results[0]["error"]
+    assert res.results[0].assets_count == 0
+    assert res.results[0].signals_detected_count == 0
+    assert "could not be resolved" in (res.results[0].error or "")

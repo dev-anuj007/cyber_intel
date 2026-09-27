@@ -1,5 +1,5 @@
 import asyncio
-from typing import Any, Dict, List, Optional, Set
+from typing import Callable, Dict, List, Optional, Set
 
 from src.services.accounts.types import Asset, SecuritySignal
 from src.services.crawler.internals.scanners.cisa_kev_scanner import CisaKevScanner
@@ -7,6 +7,7 @@ from src.services.crawler.internals.scanners.owasp_zap_scanner import OwaspZapSc
 from src.services.crawler.internals.scanners.projectdiscovery_scanner import (
     ProjectDiscoveryScanner,
 )
+from src.services.crawler.internals.scanners.protocols import IScanner
 from src.services.crawler.internals.scanners.standard_scanner import (
     StandardCrawlerScanner,
 )
@@ -20,7 +21,7 @@ from src.services.logger.logger_service import BaseLogger, get_logger
 
 
 class ScannerFactory:
-    _registry: Dict[str, Any] = {
+    _registry: Dict[str, Callable[..., IScanner]] = {
         "standard": StandardCrawlerScanner,
         "owasp_zap": OwaspZapScanner,
         "projectdiscovery": ProjectDiscoveryScanner,
@@ -28,7 +29,9 @@ class ScannerFactory:
     }
 
     @classmethod
-    def register_scanner(cls, scanner_type: str, scanner_cls: Any) -> None:
+    def register_scanner(
+        cls, scanner_type: str, scanner_cls: Callable[..., IScanner]
+    ) -> None:
         cls._registry[scanner_type.lower()] = scanner_cls
 
     @classmethod
@@ -37,12 +40,14 @@ class ScannerFactory:
         scanner_type: str = "standard",
         logger: Optional[BaseLogger] = None,
         **kwargs,
-    ) -> Any:
+    ) -> IScanner:
         st = scanner_type.lower()
         scanner_cls = cls._registry.get(st)
         if not scanner_cls:
             available = list(cls._registry.keys())
-            raise ValueError(f"Unknown scanner type: '{scanner_type}'. Available: {available}")
+            raise ValueError(
+                f"Unknown scanner type: '{scanner_type}'. Available: {available}"
+            )
         return scanner_cls(logger=logger, **kwargs)
 
     @classmethod
@@ -101,15 +106,19 @@ class ScannerFactory:
                 return await scanner.scan_async(domain, opts)
             return await asyncio.to_thread(scanner.scan, domain, opts)
 
-        scanners_to_run = [s_cls(logger=active_logger) for s_cls in cls._registry.values()]
+        scanners_to_run = [
+            s_cls(logger=active_logger) for s_cls in cls._registry.values()
+        ]
 
-        async def run_single_scanner(s):
+        async def run_single_scanner(s: IScanner) -> Optional[ScanResult]:
             try:
                 if hasattr(s, "scan_async"):
                     return await s.scan_async(domain, opts)
                 return await asyncio.to_thread(s.scan, domain, opts)
             except Exception as e:
-                active_logger.warning(f"Error executing scanner {s.scanner_type}: {e}")
+                active_logger.warning(
+                    f"Error executing scanner {s.scanner_type}: {e}"
+                )
                 return None
 
         scan_outputs = await asyncio.gather(
@@ -117,7 +126,11 @@ class ScannerFactory:
             return_exceptions=True,
         )
 
-        results: List[ScanResult] = [res for res in scan_outputs if isinstance(res, ScanResult) and res is not None]
+        results: List[ScanResult] = [
+            res
+            for res in scan_outputs
+            if isinstance(res, ScanResult) and res is not None
+        ]
 
         merged_assets: List[Asset] = []
         seen_assets: Set[tuple] = set()
@@ -129,6 +142,7 @@ class ScannerFactory:
         merged_products: Set[str] = set()
         merged_cloud_providers: Set[str] = set()
         merged_vulnerabilities: List[VulnerabilityFinding] = []
+        seen_vulnerabilities: Set[str] = set()
         merged_cves: Set[str] = set()
 
         for r in results:
@@ -139,18 +153,26 @@ class ScannerFactory:
                     merged_assets.append(a)
 
             for s in r.signals:
-                s_sev = s.severity.value if hasattr(s.severity, "value") else str(s.severity)
+                s_sev = (
+                    s.severity.value
+                    if hasattr(s.severity, "value")
+                    else str(s.severity)
+                )
                 tup = (s.name, s_sev, getattr(s, "category", ""), s.evidence)
                 if tup not in seen_signals:
                     seen_signals.add(tup)
                     merged_signals.append(s)
+
+            for v in r.vulnerabilities:
+                if v.id not in seen_vulnerabilities:
+                    seen_vulnerabilities.add(v.id)
+                    merged_vulnerabilities.append(v)
 
             merged_ips.update(r.ips)
             merged_hostnames.update(r.hostnames)
             merged_ports.update(r.ports)
             merged_products.update(r.products)
             merged_cloud_providers.update(r.cloud_providers)
-            merged_vulnerabilities.extend(r.vulnerabilities)
             merged_cves.update(r.cves)
 
         return ScanResult(

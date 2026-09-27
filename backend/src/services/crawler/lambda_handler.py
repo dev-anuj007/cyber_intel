@@ -48,10 +48,15 @@ _mangum_handler = Mangum(app, lifespan="off")
 
 
 def handler(event, context):
-    if isinstance(event, dict) and ("job_id" in event or event.get("action") == "execute_job"):
+    if isinstance(event, dict) and (
+        "job_id" in event or event.get("action") == "execute_job"
+    ):
         job_id = event.get("job_id")
         if job_id:
-            logger.info(f"Executing background crawler job {job_id} via async Lambda event", job_id=str(job_id))
+            logger.info(
+                f"Executing background crawler job {job_id} via async Lambda event",
+                job_id=str(job_id),
+            )
             get_jobs_service().execute_job(str(job_id))
             return {"status": "completed", "job_id": str(job_id)}
     return _mangum_handler(event, context)

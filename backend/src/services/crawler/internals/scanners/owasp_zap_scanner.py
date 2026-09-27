@@ -63,7 +63,9 @@ class OwaspZapScanner:
         cookies: List[str] = []
 
         user_agent_hdr = {"User-Agent": "OWASP-ZAP-DAST-Scanner/2.14 (SalesIntel)"}
-        async with httpx.AsyncClient(verify=False, timeout=timeout, follow_redirects=True) as client:
+        async with httpx.AsyncClient(
+            verify=False, timeout=timeout, follow_redirects=True
+        ) as client:
             try:
                 resp = await client.get(target_url, headers=user_agent_hdr)
                 status_code = resp.status_code
@@ -151,7 +153,9 @@ class OwaspZapScanner:
                     name="Weak / Permissive Content-Security-Policy",
                     severity=SignalSeverity.MEDIUM,
                     category="misconfiguration",
-                    evidence=(f"CSP header permits 'unsafe-inline' or 'unsafe-eval': {csp[:80]}..."),
+                    evidence=(
+                        f"CSP header permits 'unsafe-inline' or 'unsafe-eval': {csp[:80]}..."
+                    ),
                 )
             )
 
@@ -219,7 +223,9 @@ class OwaspZapScanner:
                     name="Permissive Wildcard CORS Configuration",
                     severity=SignalSeverity.HIGH,
                     category="misconfiguration",
-                    evidence=(f"Access-Control-Allow-Origin is set to wildcard '*' on {clean_domain}."),
+                    evidence=(
+                        f"Access-Control-Allow-Origin is set to wildcard '*' on {clean_domain}."
+                    ),
                 )
             )
             vulnerabilities.append(
@@ -252,7 +258,9 @@ class OwaspZapScanner:
                     name="Technology Stack Fingerprint Disclosure",
                     severity=SignalSeverity.LOW,
                     category="info-leak",
-                    evidence=(f"X-Powered-By header discloses backend runtime: '{powered_by}'."),
+                    evidence=(
+                        f"X-Powered-By header discloses backend runtime: '{powered_by}'."
+                    ),
                 )
             )
 
@@ -264,7 +272,9 @@ class OwaspZapScanner:
                         name="Cookie Missing Secure Flag",
                         severity=SignalSeverity.MEDIUM,
                         category="session",
-                        evidence=(f"Cookie set without 'Secure' attribute over network: {cookie[:40]}..."),
+                        evidence=(
+                            f"Cookie set without 'Secure' attribute over network: {cookie[:40]}..."
+                        ),
                     )
                 )
             if "httponly" not in c_lower:
@@ -279,14 +289,20 @@ class OwaspZapScanner:
                     )
                 )
 
-        async with httpx.AsyncClient(verify=False, timeout=0.2, follow_redirects=False) as client:
+        async with httpx.AsyncClient(
+            verify=False, timeout=0.2, follow_redirects=False
+        ) as client:
 
             async def probe_path(path: str, desc: str):
                 try:
                     p_resp = await client.get(f"{target_url}{path}")
                     if p_resp.status_code == 200 and len(p_resp.content) > 0:
                         is_critical = ".env" in path or ".git" in path
-                        sev = SignalSeverity.HIGH if is_critical else SignalSeverity.MEDIUM
+                        sev = (
+                            SignalSeverity.HIGH
+                            if is_critical
+                            else SignalSeverity.MEDIUM
+                        )
                         return (
                             SecuritySignal(
                                 name=f"Sensitive Endpoint Exposed ({desc})",
@@ -350,7 +366,9 @@ class OwaspZapScanner:
             import concurrent.futures
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                return pool.submit(asyncio.run, self.scan_async(domain, options)).result()
+                return pool.submit(
+                    asyncio.run, self.scan_async(domain, options)
+                ).result()
         return asyncio.run(self.scan_async(domain, options))
 
     def _check_zap_daemon(self) -> bool:
