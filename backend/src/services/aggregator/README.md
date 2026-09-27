@@ -10,15 +10,15 @@ The service follows clean architecture and domain-driven design principles with 
 
 ```mermaid
 flowchart TD
-    Ingest["Raw Telemetry / JSONL Feeds"] --> Svc["AggregatorService<br/><code>aggregator_service.py</code>"]
-    Svc --> Ctx["Dependency Context<br/><code>dependencies.py</code>"]
-    Ctx --> Logger["BaseLogger"]
-    Ctx --> Extractor["FeatureExtractor<br/><code>internals/parsers.py</code>"]
-    Ctx --> Resolver["AccountKeyResolver<br/><code>internals/resolvers.py</code>"]
-    Ctx --> Detector["SignalDetector<br/><code>internals/signals.py</code>"]
-    Ctx --> Reader["JsonlReader<br/><code>internals/repositories/reader.py</code>"]
-    Svc --> Builder["AccountBuilder & _AccountBuffer<br/><code>internals/builder.py</code>"]
-    Builder --> Output["Normalized Account Profiles<br/><code>Account (types.py)</code>"]
+    Ingest["Raw Network Telemetry"] --> Svc["Aggregator Service"]
+    Svc --> Ctx["Dependency Context"]
+    Ctx --> Logger["Logger Service"]
+    Ctx --> Extractor["Feature Extractor"]
+    Ctx --> Resolver["Account Key Resolver"]
+    Ctx --> Detector["Signal Detector"]
+    Ctx --> Reader["JSONL Reader"]
+    Svc --> Builder["Account Builder & Buffer"]
+    Builder --> Output["Target Account Profiles"]
 ```
 
 ### Module Breakdown
@@ -55,12 +55,12 @@ aggregator/
 
 ```mermaid
 flowchart TD
-    Raw["Raw Shodan / Network Record<br/><i>(Dict / ProcessRecordQuery)</i>"] --> Parse["FeatureExtractor.extract_features()<br/><i>(internals/parsers.py)</i>"]
-    Parse --> IP["Format IP Address<br/><i>(int to IPv4 string)</i>"]
-    Parse --> HTTP["Extract HTTP status, server,<br/>cloud provider, and tags"]
-    Parse --> Vuln["FeatureExtractor<br/>.extract_vulnerability_features()<br/><i>(internals/parsers.py)</i>"]
-    Vuln --> Metrics["Compute vulnerability_count, max_cvss,<br/>max_epss, kev_count, ransomware_count"]
-    Metrics --> Feat["RecordFeatures / Dict Output<br/><i>(Standardized Feature Map)</i>"]
+    Raw["Raw Network Record"] --> Parse["Feature Extractor"]
+    Parse --> IP["Format IPv4 Address"]
+    Parse --> HTTP["Extract Cloud & HTTP Headers"]
+    Parse --> Vuln["Extract Vulnerability Metrics"]
+    Vuln --> Metrics["Compute CVSS, EPSS & KEV"]
+    Metrics --> Feat["Normalized Record Features"]
     IP --> Feat
     HTTP --> Feat
 ```
@@ -79,15 +79,15 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Feat["RecordFeatures / Dict<br/><i>(Standardized Feature Map)</i>"] --> SigDet["SignalDetector.detect_signals()<br/><i>(internals/signals.py)</i>"]
-    SigDet --> Tech["Check tags (e.g. 'eol-product')<br/>&rarr; <b>HIGH: eol_product</b>"]
-    SigDet --> KEV["Check kev_count > 0<br/>&rarr; <b>CRITICAL: kev_vulnerability</b>"]
-    SigDet --> CVSS["Check max_cvss<br/>&ge; 9.0 CRITICAL | &ge; 7.0 HIGH<br/>&rarr; <b>high_severity_vulnerability</b>"]
-    SigDet --> EPSS["Check max_epss &ge; 0.50<br/>&rarr; <b>HIGH: high_exploitation_probability</b>"]
-    SigDet --> Ransom["Check ransomware_campaign != null<br/>&rarr; <b>CRITICAL: ransomware_associated_vulnerability</b>"]
-    SigDet --> VulnCount["Check vulnerability_count &ge; 5<br/>&rarr; <b>MEDIUM: multiple_vulnerabilities</b>"]
-    SigDet --> Ports["Check port not in (80, 443)<br/>&rarr; <b>LOW: non_standard_exposed_port</b>"]
-    Tech --> Signals["List of SecuritySignal Entities<br/><i>(Name, Severity, Category, Evidence)</i>"]
+    Feat["Record Features"] --> SigDet["Signal Detector"]
+    SigDet --> Tech["EOL Technology Tag<br/><b>HIGH Severity</b>"]
+    SigDet --> KEV["CISA KEV Vulnerability<br/><b>CRITICAL Severity</b>"]
+    SigDet --> CVSS["CVSS Score Threshold<br/><b>CRITICAL / HIGH</b>"]
+    SigDet --> EPSS["High EPSS Probability<br/><b>HIGH Severity</b>"]
+    SigDet --> Ransom["Ransomware Campaign<br/><b>CRITICAL Severity</b>"]
+    SigDet --> VulnCount["High Vulnerability Count<br/><b>MEDIUM Severity</b>"]
+    SigDet --> Ports["Non-Standard Port<br/><b>LOW Severity</b>"]
+    Tech --> Signals["Security Signals List"]
     KEV --> Signals
     CVSS --> Signals
     EPSS --> Signals
@@ -111,14 +111,14 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Record["Raw Record + Candidate Domains + Hostnames"] --> Res["AccountKeyResolver.resolve()<br/><i>(internals/resolvers.py)</i>"]
-    Res --> Filter["Filter Transit & PTR Domains<br/><i>(internals/domain_utils.py)</i>"]
-    Filter --> Match["extract_root_domain_match()<br/><i>(Match hostnames against root domains)</i>"]
-    Match --> Keys["Resolved Account Keys<br/><i>(e.g., 'domain:acme.com')</i>"]
-    Keys --> Builder["AccountBuilder.add_record()<br/><i>(internals/builder.py)</i>"]
-    Builder --> Buffer["_AccountBuffer<br/><i>(Deduplicates IPs, Ports, Hostnames, Signals)</i>"]
-    Buffer --> Build["AccountBuilder.build()<br/><i>(Converts buffers to Account instances)</i>"]
-    Build --> Accounts["Dict[str, Account] Unified Targets<br/><i>(Or List[Account] via aggregate)</i>"]
+    Record["Raw Record & Hostnames"] --> Res["Account Key Resolver"]
+    Res --> Filter["Filter Transit Domains & Dynamic PTRs"]
+    Filter --> Match["Match Hostnames to Root Domains"]
+    Match --> Keys["Resolved Account Keys"]
+    Keys --> Builder["Account Builder"]
+    Builder --> Buffer["Account Buffer<br/><i>(Deduplicate Assets & Signals)</i>"]
+    Buffer --> Build["Build Account Entity"]
+    Build --> Accounts["Unified Account Targets"]
 ```
 
 #### 🔍 Code Entry Points & Execution Trace
