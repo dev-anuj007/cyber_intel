@@ -21,7 +21,7 @@ class UserWriter(IUserWriter):
         full_name: Optional[str] = None,
         role: Optional[str] = None,
         **kwargs: Any,
-    ) -> Any:
+    ) -> int:
         if conn is None:
             raise ValueError("Database connection required")
         with _get_session(conn) as session:
@@ -37,7 +37,7 @@ class UserWriter(IUserWriter):
             session.refresh(new_user)
             if new_user.id is None:
                 raise ValueError("Failed to obtain created user ID")
-            return new_user.id
+            return int(new_user.id)
 
     def update_last_login(self, conn: Optional[Any], user_id: Any) -> bool:
         return True

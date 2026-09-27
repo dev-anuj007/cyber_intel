@@ -151,9 +151,18 @@ default_scorer_service: IScorerService = _LazyScorerServiceProxy()
 
 
 def get_user_scorer(
-    current_user: Optional[dict] = Depends(get_current_user_optional),
+    current_user: Optional[Any] = Depends(get_current_user_optional),
 ) -> IScorerService:
-    api_key = current_user.get("gemini_api_key") if current_user else None
+    api_key: Optional[str] = None
+    if current_user:
+        from src.services.auth.dependencies import default_auth_service
+
+        user_id = getattr(current_user, "id", None) or (
+            current_user.get("id") if isinstance(current_user, dict) else None
+        )
+        if user_id:
+            api_key = default_auth_service.get_user_api_key(user_id)
+
     if not api_key:
         api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:

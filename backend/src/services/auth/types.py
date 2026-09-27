@@ -1,10 +1,10 @@
-from typing import Any, Optional
+from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class UserSignupRequest(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(extra="ignore")
 
     email: str
     password: str
@@ -13,14 +13,14 @@ class UserSignupRequest(BaseModel):
 
 
 class UserSigninRequest(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(extra="ignore")
 
     email: str
     password: str
 
 
 class SignupCommand(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(extra="ignore")
 
     email: str
     password: str
@@ -29,16 +29,16 @@ class SignupCommand(BaseModel):
 
 
 class SigninCommand(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(extra="ignore")
 
     email: str
     password: str
 
 
 class UserResponse(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(extra="ignore")
 
-    id: Any
+    id: int
     email: str
     has_api_key: bool = False
     api_key_preview: Optional[str] = None
@@ -46,63 +46,45 @@ class UserResponse(BaseModel):
     full_name: Optional[str] = None
     role: Optional[str] = None
 
-    def __getitem__(self, item: str) -> Any:
-        if hasattr(self, item):
-            return getattr(self, item)
-        raise KeyError(item)
-
-    def __contains__(self, item: str) -> bool:
-        return hasattr(self, item) and getattr(self, item) is not None
-
-    def get(self, item: str, default: Any = None) -> Any:
-        try:
-            return self[item]
-        except KeyError:
-            return default
-
-    def keys(self) -> list:
-        return ["id", "email", "has_api_key", "api_key_preview", "created_at", "full_name", "role"]
-
 
 class AuthResponse(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(extra="ignore")
 
     token: str
     user: UserResponse
 
-    def __getitem__(self, item: str) -> Any:
-        if item == "token":
-            return self.token
-        if item == "user":
-            return self.user
-        if hasattr(self.user, item):
-            return getattr(self.user, item)
-        raise KeyError(item)
-
-    def __contains__(self, item: str) -> bool:
-        return item in ("token", "user") or (hasattr(self.user, item) and getattr(self.user, item) is not None)
-
-    def get(self, item: str, default: Any = None) -> Any:
-        try:
-            return self[item]
-        except KeyError:
-            return default
-
-    def keys(self) -> list:
-        return ["token", "user"]
-
 
 class ApiKeyUpdateRequest(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(extra="ignore")
 
     api_key: Optional[str] = None
 
 
 class UpdateApiKeyCommand(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(extra="ignore")
 
-    user_id: Any
+    user_id: int
     api_key: Optional[str] = None
 
 
+class ApiKeyItem(BaseModel):
+    model_config = ConfigDict(extra="ignore")
 
+    api_key: str
+    created_at: Optional[str] = None
+
+
+class ApiKeyListResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    items: List[Dict[str, Any]] = Field(default_factory=list)
+    total: int = 0
+
+
+class ApiKeyOperationResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    success: bool = True
+    message: str
+    api_key: Optional[str] = None
+    user_id: Optional[int] = None
