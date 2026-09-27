@@ -94,6 +94,13 @@ class ScoringRequest(BaseModel):
     prompt_version: Optional[str] = None
 
 
+class GeminiScoringOutputSchema(BaseModel):
+    score: int
+    priority_tier: str
+    key_risks: List[str]
+    suggested_outreach: str
+
+
 class ScoringResponse(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="ignore")
 

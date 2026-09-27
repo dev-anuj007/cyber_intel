@@ -3,7 +3,7 @@ import secrets
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from sqlmodel import Session
 
@@ -25,12 +25,25 @@ class EvalWriter(IEvalWriter):
             record = EvalRunTable(
                 run_id=run_record["run_id"],
                 prompt_version=run_record.get("prompt_version", "v2.0"),
-                total_samples=run_record.get("sample_size", run_record.get("total_samples", 0)),
-                tier_accuracy=float(run_record.get("accuracy", run_record.get("tier_accuracy", 0.0))),
-                macro_f1=float(run_record.get("f1_score", run_record.get("macro_f1", 0.0))),
+                total_samples=run_record.get(
+                    "sample_size", run_record.get("total_samples", 0)
+                ),
+                tier_accuracy=float(
+                    run_record.get("accuracy", run_record.get("tier_accuracy", 0.0))
+                ),
+                macro_f1=float(
+                    run_record.get("f1_score", run_record.get("macro_f1", 0.0))
+                ),
                 weighted_f1=float(run_record.get("weighted_f1", 0.0)),
-                critical_threat_recall=float(run_record.get("recall", run_record.get("critical_threat_recall", 0.0))),
-                score_tier_consistency=float(run_record.get("score_tier_consistency", 0.0)),
+                critical_threat_recall=float(
+                    run_record.get(
+                        "recall",
+                        run_record.get("critical_threat_recall", 0.0),
+                    )
+                ),
+                score_tier_consistency=float(
+                    run_record.get("score_tier_consistency", 0.0)
+                ),
                 score_mae=float(run_record.get("score_mae", 0.0)),
                 score_rmse=float(run_record.get("score_rmse", 0.0)),
                 within_5_points=int(run_record.get("within_5_points", 0)),
@@ -44,7 +57,13 @@ class EvalWriter(IEvalWriter):
             session.commit()
             return record.run_id
 
-    def save_results(self, results: dict, version: str = "v1.0", out_dir: str = "results") -> Path:
+    def save_results(
+        self,
+        results: dict,
+        version: str = "v1.0",
+        out_dir: str = "results",
+        conn: Optional[Any] = None,
+    ) -> Path:
         clean_version = version.replace(".", "_")
         run_id = f"eval-results-{clean_version}-{int(time.time())}_{secrets.token_hex(4)}.json"
         now_iso = datetime.now().isoformat()
@@ -70,8 +89,9 @@ class EvalWriter(IEvalWriter):
         )
 
         try:
-            with get_db_connection() as conn:
-                with _get_session(conn) as session:
+            db_conn = conn if conn is not None else get_db_connection()
+            with db_conn as active_conn:
+                with _get_session(active_conn) as session:
                     eval_record = EvalRunTable(
                         run_id=run_id,
                         prompt_version=version,
@@ -92,11 +112,11 @@ class EvalWriter(IEvalWriter):
                     )
                     session.add(eval_record)
                     session.commit()
-                    logger.info("Saved evaluation run to database table eval_runs", run_id=run_id)
+                    logger.info(
+                        "Saved evaluation run to database table eval_runs",
+                        run_id=run_id,
+                    )
         except Exception as e:
             logger.error(f"Failed to persist eval run to database: {e}")
 
         return Path(run_id)
-
-
-

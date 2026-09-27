@@ -27,13 +27,17 @@ router = APIRouter(prefix="/api/eval", tags=["Evaluation Harness & Benchmarks"])
 
 
 @router.get("/prompts")
-def list_eval_prompts(eval_service: IEvalService = Depends(get_eval_service)):
+def list_eval_prompts(
+    eval_service: IEvalService = Depends(get_eval_service),
+):
     prompts = eval_service.list_prompts()
     return {"prompts": prompts}
 
 
 @router.get("/dataset")
-def get_eval_dataset(eval_service: IEvalService = Depends(get_eval_service)):
+def get_eval_dataset(
+    eval_service: IEvalService = Depends(get_eval_service),
+):
     dataset = eval_service.get_default_dataset()
     return {"dataset": dataset, "total": len(dataset)}
 
@@ -47,11 +51,16 @@ def execute_eval_run(
 ):
     if not req.dry_run:
         if not current_user:
-            raise AuthenticationError(message="Authentication required. Please sign in to execute live AI evaluations.")
+            raise AuthenticationError(
+                message="Authentication required. Please sign in to execute live AI evaluations."
+            )
         user_api_key = current_user.get("gemini_api_key")
         if not user_api_key:
             raise InvalidInputError(
-                message="Gemini API key not configured. Please open Profile settings and add your API key before running live evaluations.",
+                message=(
+                    "Gemini API key not configured. Please open Profile settings "
+                    "and add your API key before running live evaluations."
+                ),
                 code="MISSING_GEMINI_API_KEY",
             )
     else:
@@ -59,7 +68,9 @@ def execute_eval_run(
 
     user_id = current_user.get("id") if current_user else None
     sample_count = len(req.eval_set) if req.eval_set else (req.sample_limit or 25)
-    title = f"Eval Harness ({req.prompt_version})" + (" [Dry Run]" if req.dry_run else " [Live]")
+    title = f"Eval Harness ({req.prompt_version})" + (
+        " [Dry Run]" if req.dry_run else " [Live]"
+    )
 
     payload = {
         "prompt_version": req.prompt_version,
@@ -84,7 +95,9 @@ def execute_eval_run(
     )
 
     job_info = jobs_service.get_job(job_id)
-    current_status = getattr(job_info, "status", JobStatus.QUEUED) if job_info else JobStatus.QUEUED
+    current_status = (
+        getattr(job_info, "status", JobStatus.QUEUED) if job_info else JobStatus.QUEUED
+    )
 
     return JobSubmitResponse(
         success=True,
@@ -110,7 +123,10 @@ def execute_eval_compare(
         user_api_key = current_user.get("gemini_api_key")
         if not user_api_key:
             raise InvalidInputError(
-                message="Gemini API key not configured. Please open Profile settings and add your API key before running live comparisons.",
+                message=(
+                    "Gemini API key not configured. Please open Profile settings "
+                    "and add your API key before running live comparisons."
+                ),
                 code="MISSING_GEMINI_API_KEY",
             )
     else:
@@ -119,7 +135,9 @@ def execute_eval_compare(
     user_id = current_user.get("id") if current_user else None
     single_count = len(req.eval_set) if req.eval_set else (req.sample_limit or 25)
     sample_count = 2 * single_count if not (req.file_a and req.file_b) else 2
-    title = f"Eval Comparison ({req.prompt_a} vs {req.prompt_b})" + (" [Dry Run]" if req.dry_run else " [Live]")
+    title = f"Eval Comparison ({req.prompt_a} vs {req.prompt_b})" + (
+        " [Dry Run]" if req.dry_run else " [Live]"
+    )
 
     payload = {
         "prompt_a": req.prompt_a,
@@ -148,7 +166,9 @@ def execute_eval_compare(
     )
 
     job_info = jobs_service.get_job(job_id)
-    current_status = getattr(job_info, "status", JobStatus.QUEUED) if job_info else JobStatus.QUEUED
+    current_status = (
+        getattr(job_info, "status", JobStatus.QUEUED) if job_info else JobStatus.QUEUED
+    )
 
     return JobSubmitResponse(
         success=True,
@@ -160,7 +180,9 @@ def execute_eval_compare(
 
 
 @router.get("/history")
-def list_eval_history(eval_service: IEvalService = Depends(get_eval_service)):
+def list_eval_history(
+    eval_service: IEvalService = Depends(get_eval_service),
+):
     history = eval_service.list_history()
     return {"history": history}
 
@@ -173,6 +195,12 @@ def get_eval_result_file(
     try:
         return eval_service.get_result_file(filename)
     except FileNotFoundError:
-        raise NotFoundError(message="Eval result file not found", code="EVAL_RESULT_NOT_FOUND")
+        raise NotFoundError(
+            message="Eval result file not found",
+            code="EVAL_RESULT_NOT_FOUND",
+        )
     except Exception as e:
-        raise ExternalServiceError(message=f"Failed to read result file: {str(e)}", code="FILE_READ_ERROR")
+        raise ExternalServiceError(
+            message=f"Failed to read result file: {str(e)}",
+            code="FILE_READ_ERROR",
+        )

@@ -22,6 +22,7 @@ from src.services.scorer.types import (
     AccountScore,
     BatchScoreCommand,
     CategorizedSignals,
+    GeminiScoringOutputSchema,
     GetPromptQuery,
     LatestScoreResponse,
     LLMStats,
@@ -295,7 +296,7 @@ class ScorerService(IScorerService):
                     contents=prompt,
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
-                        response_schema=ScoringResponse,
+                        response_schema=GeminiScoringOutputSchema,
                         max_output_tokens=2048,
                     ),
                 )

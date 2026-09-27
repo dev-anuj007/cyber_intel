@@ -7,9 +7,9 @@ from sqlmodel import Session, col, select
 from src.services.database.dependencies import get_db_connection, get_db_session
 from src.services.eval.internals.repositories.models import EvalRunTable
 from src.services.eval.protocols import IEvalReader
+from src.services.eval.types import EvalHistoryItem
 from src.services.logger.logger_service import get_logger
 from src.services.prompts.templates import CANONICAL_PROMPTS_LIST
-
 
 logger = get_logger("eval.reader")
 
@@ -40,7 +40,12 @@ class EvalReader(IEvalReader):
                 "created_at": row.created_at,
             }
 
-    def get_runs(self, conn: Any, prompt_version: Optional[str] = None, limit: int = 20) -> List[Dict[str, Any]]:
+    def get_runs(
+        self,
+        conn: Any,
+        prompt_version: Optional[str] = None,
+        limit: int = 20,
+    ) -> List[Dict[str, Any]]:
         with _get_session(conn) as session:
             query = select(EvalRunTable)
             if prompt_version:
@@ -59,26 +64,29 @@ class EvalReader(IEvalReader):
     def list_prompts(self, prompts_dir: Optional[Path] = None) -> List[Dict[str, Any]]:
         return CANONICAL_PROMPTS_LIST
 
-    def list_history(self, results_dir: Path) -> List[Dict[str, Any]]:
-        history = []
+    def list_history(self, results_dir: Path) -> List[EvalHistoryItem]:
+        history: List[EvalHistoryItem] = []
         try:
             with get_db_connection() as conn:
                 with _get_session(conn) as session:
-                    statement = select(EvalRunTable).order_by(col(EvalRunTable.created_at).desc()).limit(100)
+                    statement = (
+                        select(EvalRunTable)
+                        .order_by(col(EvalRunTable.created_at).desc())
+                        .limit(100)
+                    )
                     rows = session.exec(statement).all()
                     for r in rows:
                         history.append(
-                            {
-                                "filename": r.run_id,
-                                "prompt_version": r.prompt_version,
-                                "total": r.total_samples,
-                                "tier_accuracy": r.tier_accuracy,
-                                "macro_f1": r.macro_f1,
-                                "weighted_f1": r.weighted_f1,
-                                "score_mae": r.score_mae,
-                                "within_5_points_pct": r.within_5_points_pct,
-                                "timestamp": r.created_at,
-                            }
+                            EvalHistoryItem(
+                                run_id=r.run_id,
+                                prompt_version=r.prompt_version,
+                                total_samples=r.total_samples,
+                                tier_accuracy=r.tier_accuracy,
+                                macro_f1=r.macro_f1,
+                                critical_threat_recall=r.critical_threat_recall,
+                                created_at=r.created_at,
+                                filename=r.run_id,
+                            )
                         )
         except Exception as e:
             logger.warning(f"Error querying eval_runs database table: {e}")
@@ -90,27 +98,32 @@ class EvalReader(IEvalReader):
                         data = json.load(f)
                         res = data.get("results", {})
                         history.append(
-                            {
-                                "filename": p.name,
-                                "prompt_version": data.get("prompt_version", "v2.0"),
-                                "total": res.get("total", 0),
-                                "tier_accuracy": res.get("tier_accuracy", 0.0),
-                                "macro_f1": res.get("macro_f1", 0.0),
-                                "weighted_f1": res.get("weighted_f1", 0.0),
-                                "score_mae": res.get("score_mae", 0.0),
-                                "within_5_points_pct": res.get("within_5_points_pct", 0.0),
-                                "timestamp": data.get("timestamp"),
-                            }
+                            EvalHistoryItem(
+                                run_id=p.stem,
+                                prompt_version=data.get("prompt_version", "v2.0"),
+                                total_samples=res.get("total", 0),
+                                tier_accuracy=res.get("tier_accuracy", 0.0),
+                                macro_f1=res.get("macro_f1", 0.0),
+                                critical_threat_recall=res.get(
+                                    "critical_threat_recall", 0.0
+                                ),
+                                created_at=data.get("timestamp"),
+                                filename=p.name,
+                            )
                         )
                 except Exception as ex:
                     logger.warning(f"Failed to read result file {p}: {ex}")
 
-        return sorted(history, key=lambda x: str(x.get("timestamp", "")), reverse=True)
+        return sorted(history, key=lambda x: str(x.created_at or ""), reverse=True)
 
-    def get_history_file(self, results_dir: Path, filename: str) -> Optional[Dict[str, Any]]:
+    def get_history_file(
+        self, results_dir: Path, filename: str
+    ) -> Optional[Dict[str, Any]]:
         return self.read_result_file(results_dir, filename)
 
-    def read_result_file(self, results_dir: Path, filename: str) -> Optional[Dict[str, Any]]:
+    def read_result_file(
+        self, results_dir: Path, filename: str
+    ) -> Optional[Dict[str, Any]]:
         clean_filename = Path(filename).name
         target = results_dir / clean_filename
         if target.exists():
@@ -124,7 +137,9 @@ class EvalReader(IEvalReader):
         try:
             with get_db_connection() as conn:
                 with _get_session(conn) as session:
-                    statement = select(EvalRunTable).where(EvalRunTable.run_id == clean_filename)
+                    statement = select(EvalRunTable).where(
+                        EvalRunTable.run_id == clean_filename
+                    )
                     row = session.exec(statement).first()
                     if row and row.results_json:
                         return json.loads(row.results_json)
@@ -132,6 +147,3 @@ class EvalReader(IEvalReader):
             logger.warning(f"Error reading result file from database: {e}")
 
         return None
-
-
-

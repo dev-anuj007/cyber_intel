@@ -159,7 +159,7 @@ class AccountScoreHistoryResponse(BaseModel):
     account_key: str
     version: Optional[str] = None
     total_versions: int
-    history: List[Dict[str, Any]] = Field(default_factory=list)
+    history: List["ScoreHistoryItem"] = Field(default_factory=list)
 
 
 class AccountsHealthResponse(BaseModel):
@@ -190,3 +190,8 @@ class ClearAccountsResponse(BaseModel):
 
     success: bool = True
     message: str = "All accounts cleared"
+
+
+from src.services.scorer.types import ScoreHistoryItem  # noqa: E402
+
+AccountScoreHistoryResponse.model_rebuild()

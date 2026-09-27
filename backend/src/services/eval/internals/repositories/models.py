@@ -24,6 +24,3 @@ class EvalRunTable(SQLModel, table=True):
     predictions_json: Optional[str] = "[]"
     results_json: Optional[str] = "{}"
     created_at: Optional[str] = Field(default=None)
-
-
-

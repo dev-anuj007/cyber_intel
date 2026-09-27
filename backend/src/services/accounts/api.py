@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends
 
@@ -18,9 +18,12 @@ from src.services.accounts.types import (
     ListAccountsQuery,
     SummaryStats,
 )
+from src.services.logger.logger_service import get_logger
 from src.services.scorer.dependencies import get_scorer_service
 from src.services.scorer.protocols import IScorerService
+from src.services.scorer.types import ScoreHistoryItem
 
+logger = get_logger("services.accounts.api")
 router = APIRouter(tags=["Accounts & Prospecting"])
 
 
@@ -86,10 +89,15 @@ def get_account_score_history(
     scorer_service: IScorerService = Depends(get_scorer_service),
 ) -> AccountScoreHistoryResponse:
     try:
-        history = scorer_service.get_score_history_for_account(
+        history: List[ScoreHistoryItem] = scorer_service.get_score_history(
             account_key, version=version
         )
-    except Exception:
+    except Exception as e:
+        logger.error(
+            "Error fetching score history for account",
+            account_key=account_key,
+            error=str(e),
+        )
         history = []
     return AccountScoreHistoryResponse(
         account_key=account_key,
@@ -136,8 +144,8 @@ def get_account(
 
     if not account.latest_score and scorer_service is not None:
         try:
-            account.latest_score = scorer_service.get_latest_score_for_account(
-                account.account_key
+            account.latest_score = scorer_service.get_latest_score(
+                account.account_key, version=version
             )
         except Exception:
             pass
