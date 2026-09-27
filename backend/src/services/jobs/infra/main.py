@@ -3,7 +3,7 @@
 import pulumi
 import pulumi_aws as aws
 
-from src.services.infra import ServiceInfraContext, ServiceInfraOutput
+from src.services.infra.types import ServiceInfraContext, ServiceInfraOutput
 
 
 def provision_service_infra(ctx: ServiceInfraContext) -> ServiceInfraOutput:
@@ -23,7 +23,11 @@ def provision_service_infra(ctx: ServiceInfraContext) -> ServiceInfraOutput:
         timeout=120,
         ephemeral_storage=aws.lambda_.FunctionEphemeralStorageArgs(size=4096),
         environment=aws.lambda_.FunctionEnvironmentArgs(variables=ctx.common_env_vars),
-        tags={"Environment": ctx.environment, "App": ctx.app_name, "Service": service_name},
+        tags={
+            "Environment": ctx.environment,
+            "App": ctx.app_name,
+            "Service": service_name,
+        },
     )
 
     # 2. Dedicated API Gateway Integration

@@ -9,9 +9,10 @@ from mangum import Mangum
 
 from src.core.config import LOGFIRE_TOKEN
 from src.core.error_handlers import register_error_handlers
-from src.services.jobs import default_jobs_service
 from src.services.jobs.api import router as jobs_router
-from src.services.logger import UserJourneyMiddleware, get_logger
+from src.services.jobs.dependencies import get_jobs_service
+from src.services.logger.logger_service import get_logger
+from src.services.logger.middleware import UserJourneyMiddleware
 
 logger = get_logger("services.jobs.lambda")
 
@@ -46,7 +47,7 @@ app.include_router(jobs_router)
 @app.on_event("startup")
 def on_startup():
     try:
-        default_jobs_service.recover_stale_jobs()
+        get_jobs_service().recover_stale_jobs()
         logger.info("Jobs microservice initialized and stale jobs checked")
     except Exception as e:
         logger.warning(f"Jobs recovery check notice: {e}")
@@ -64,7 +65,10 @@ def handler(event, context):
     if isinstance(event, dict) and ("job_id" in event or event.get("action") == "execute_job"):
         job_id = event.get("job_id")
         if job_id:
-            logger.info(f"Executing background job {job_id} via async Lambda event", job_id=str(job_id))
-            default_jobs_service.execute_job(str(job_id))
+            logger.info(
+                f"Executing background job {job_id} via async Lambda event",
+                job_id=str(job_id),
+            )
+            get_jobs_service().execute_job(str(job_id))
             return {"status": "completed", "job_id": str(job_id)}
     return _mangum_handler(event, context)

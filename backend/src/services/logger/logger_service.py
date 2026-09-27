@@ -3,9 +3,10 @@
 from typing import Dict, Optional
 
 from src.core.config import ENVIRONMENT, LOGFIRE_TOKEN
-from src.services.logger.internal.base_logger import BaseLogger
-from src.services.logger.internal.console_logger import ConsoleLogger
-from src.services.logger.internal.logfire_logger import LogfireLogger
+from src.services.logger.internals.base_logger import BaseLogger
+from src.services.logger.internals.console_logger import ConsoleLogger
+from src.services.logger.internals.logfire_logger import LogfireLogger
+
 
 
 class LoggerService:

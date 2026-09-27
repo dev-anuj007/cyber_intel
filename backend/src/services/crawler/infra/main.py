@@ -3,7 +3,7 @@
 import pulumi
 import pulumi_aws as aws
 
-from src.services.infra import ServiceInfraContext, ServiceInfraOutput
+from src.services.infra.types import ServiceInfraContext, ServiceInfraOutput
 
 
 def provision_service_infra(ctx: ServiceInfraContext) -> ServiceInfraOutput:
@@ -11,7 +11,6 @@ def provision_service_infra(ctx: ServiceInfraContext) -> ServiceInfraOutput:
     service_name = "crawler"
     name_prefix = f"{ctx.prefix}-{service_name}"
 
-    # 1. Dedicated Crawler Lambda Function
     crawler_lambda = aws.lambda_.Function(
         f"{name_prefix}-lambda",
         name=f"{ctx.prefix}-{service_name}",
@@ -26,7 +25,6 @@ def provision_service_infra(ctx: ServiceInfraContext) -> ServiceInfraOutput:
         tags={"Environment": ctx.environment, "App": ctx.app_name, "Service": service_name},
     )
 
-    # 2. Dedicated API Gateway Integration
     integration = aws.apigatewayv2.Integration(
         f"{name_prefix}-integration",
         api_id=ctx.http_api_id,
@@ -35,7 +33,6 @@ def provision_service_infra(ctx: ServiceInfraContext) -> ServiceInfraOutput:
         payload_format_version="2.0",
     )
 
-    # 3. Dedicated Lambda Invoke Permission
     permission = aws.lambda_.Permission(
         f"{name_prefix}-permission",
         action="lambda:InvokeFunction",
@@ -44,16 +41,16 @@ def provision_service_infra(ctx: ServiceInfraContext) -> ServiceInfraOutput:
         source_arn=pulumi.Output.all(ctx.http_api_execution_arn).apply(lambda args: f"{args[0]}/*/*"),
     )
 
-    # 4. Dedicated Crawler API Gateway Routes
     route_keys = [
         "ANY /api/crawler/{proxy+}",
-        "POST /api/crawler/crawl",
-        "GET /api/crawler/domain/{domain}",
         "ANY /api/crawler",
-        "GET /api/crawler/scanners",
-        "GET /api/crawler/jobs",
         "POST /api/crawler/jobs",
+        "GET /api/crawler/jobs",
         "GET /api/crawler/jobs/{job_id}",
+        "POST /api/crawler/jobs/{job_id}/retry",
+        "GET /api/crawler/scanners",
+        "POST /api/crawler/run",
+        "POST /api/crawler/scan",
     ]
 
     routes = []

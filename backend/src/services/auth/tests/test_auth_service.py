@@ -1,15 +1,14 @@
 """Comprehensive Pytest Test Suite for Auth Service, Repositories, and API."""
 
-from unittest.mock import MagicMock, patch
-
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.services.auth.api import get_auth_service, router
 from src.services.auth.auth_service import AuthService
-from src.services.auth.repositories.reader import UserReader
-from src.services.auth.repositories.writer import UserWriter
+from src.services.auth.dependencies import create_auth_service
+from src.services.auth.internals.repositories.reader import UserReader
+from src.services.auth.internals.repositories.writer import UserWriter
 from src.services.database.database_service import DatabaseService
 
 
@@ -23,9 +22,7 @@ def test_db(tmp_path):
 
 @pytest.fixture
 def auth_service(test_db):
-    reader = UserReader()
-    writer = UserWriter()
-    return AuthService(reader=reader, writer=writer, db_path=test_db, jwt_secret="testsecretkey12345678901234567890")
+    return create_auth_service(db_path=test_db, jwt_secret="testsecretkey12345678901234567890")
 
 
 def test_auth_service_full_workflow(auth_service, test_db):

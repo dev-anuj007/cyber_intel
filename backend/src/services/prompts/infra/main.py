@@ -1,7 +1,7 @@
 import pulumi
 import pulumi_aws as aws
 
-from src.services.infra import ServiceInfraContext, ServiceInfraOutput
+from src.services.infra.types import ServiceInfraContext, ServiceInfraOutput
 
 
 def provision_service_infra(ctx: ServiceInfraContext) -> ServiceInfraOutput:

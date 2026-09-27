@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.services.accounts.types import Account, Asset, SecuritySignal, SignalSeverity
-from src.services.logger import get_logger
+from src.services.logger.logger_service import get_logger
 from src.services.scorer.scorer_service import ScorerService as AccountScorer
 
 logger = get_logger("eval.harness")

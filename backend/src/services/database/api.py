@@ -1,27 +1,18 @@
-"""Database Microservice Network Layer - FastAPI APIRouter."""
-
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
-from src.services.database.database_service import DatabaseService
+from src.core.exceptions import DatabaseError, InvalidInputError
+from src.services.database.dependencies import get_db_service
+from src.services.database.protocols import IDatabaseService
 from src.services.database.types import DatabaseHealth, DatabaseStats
-from src.services.logger import get_logger
+from src.services.logger.logger_service import get_logger
 
 logger = get_logger("services.database.api")
 
 router = APIRouter(prefix="/api/database", tags=["Database Microservice"])
-
-_db_service_instance: Optional[DatabaseService] = None
-
-
-def get_db_service() -> DatabaseService:
-    global _db_service_instance
-    if _db_service_instance is None:
-        _db_service_instance = DatabaseService()
-    return _db_service_instance
 
 
 class QueryPayload(BaseModel):
@@ -38,8 +29,7 @@ class QueryResult(BaseModel):
 
 
 @router.get("/health", response_model=Dict[str, Any])
-def database_health(db: DatabaseService = Depends(get_db_service)):
-    """Health check returning database storage location, schema table counts, and readiness."""
+def database_health(db: IDatabaseService = Depends(get_db_service)):
     health: DatabaseHealth = db.get_health()
     return {
         "status": health.status,
@@ -54,8 +44,7 @@ def database_health(db: DatabaseService = Depends(get_db_service)):
 
 
 @router.get("/stats", response_model=Dict[str, int])
-def database_stats(db: DatabaseService = Depends(get_db_service)):
-    """Summary counts of relational entities (accounts, domains, signals, assets, scores)."""
+def database_stats(db: IDatabaseService = Depends(get_db_service)):
     stats: DatabaseStats = db.get_stats()
     return {
         "total_accounts": stats.total_accounts,
@@ -69,17 +58,16 @@ def database_stats(db: DatabaseService = Depends(get_db_service)):
 
 
 @router.post("/query", response_model=QueryResult)
-def execute_query(payload: QueryPayload, db: DatabaseService = Depends(get_db_service)):
-    """Executes a safe read-only SQL query across microservices."""
+def execute_query(payload: QueryPayload, db: IDatabaseService = Depends(get_db_service)):
     normalized_sql = payload.sql.strip().lower()
     if (
         not normalized_sql.startswith("select")
         and not normalized_sql.startswith("pragma")
         and not normalized_sql.startswith("explain")
     ):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only read-only queries (SELECT, PRAGMA, EXPLAIN) are permitted through this API endpoint.",
+        raise InvalidInputError(
+            message="Only read-only queries (SELECT, PRAGMA, EXPLAIN) are permitted through this API endpoint.",
+            code="UNSUPPORTED_QUERY_TYPE",
         )
 
     start_time = time.perf_counter()
@@ -99,4 +87,5 @@ def execute_query(payload: QueryPayload, db: DatabaseService = Depends(get_db_se
             )
     except Exception as e:
         logger.error(f"Database query error: {e}", sql=payload.sql)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        raise DatabaseError(message=f"Database query error: {str(e)}", code="DATABASE_QUERY_ERROR")
+

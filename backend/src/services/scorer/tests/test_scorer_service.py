@@ -1,5 +1,3 @@
-"""Comprehensive Pytest Test Suite for Scorer Service, Repositories, and API."""
-
 from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
@@ -7,14 +5,12 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.services.accounts.repositories.writer import AccountWriter
+from src.services.accounts.internals.repositories.writer import AccountWriter
 from src.services.accounts.types import Account, Asset, SecuritySignal, SignalSeverity
 from src.services.database.database_service import DatabaseService
 from src.services.scorer.api import get_scorer_service, router
-from src.services.scorer.repositories.reader import ScoreReader
-from src.services.scorer.repositories.writer import ScoreWriter
-from src.services.scorer.scorer_service import ScorerService
-from src.services.scorer.types import AccountScore, PriorityTier
+from src.services.scorer.dependencies import create_scorer_service
+from src.services.scorer.types import AccountScore, PriorityTier, ScoreAccountCommand
 
 
 @pytest.fixture
@@ -27,9 +23,7 @@ def test_db(tmp_path):
 
 @pytest.fixture
 def scorer_service(test_db):
-    reader = ScoreReader()
-    writer = ScoreWriter()
-    return ScorerService(reader=reader, writer=writer, db_path=test_db)
+    return create_scorer_service(db_path=test_db)
 
 
 @pytest.fixture
@@ -55,12 +49,10 @@ def scored_account():
 
 
 def test_scorer_repositories_and_service_crud(scorer_service, scored_account, test_db):
-    # 1. Format context
     ctx = scorer_service.format_account_context(scored_account)
     assert "testtarget.com" in ctx
     assert "CVE-2023-9999" in ctx
 
-    # 2. Save score
     score = AccountScore(
         account_key="domain:testtarget.com",
         account=scored_account,
@@ -82,12 +74,10 @@ def test_scorer_repositories_and_service_crud(scorer_service, scored_account, te
     assert saved["score"] == 95
     assert saved["priority_tier"] == "tier_1_critical"
 
-    # 3. Read latest score
     latest = scorer_service.get_latest_score("domain:testtarget.com")
     assert latest is not None
     assert latest["score"] == 95
 
-    # 4. Save second version of score
     score2 = AccountScore(
         account_key="domain:testtarget.com",
         account=scored_account,
@@ -107,11 +97,9 @@ def test_scorer_repositories_and_service_crud(scorer_service, scored_account, te
     saved2 = scorer_service.save_score(score2)
     assert saved2["version"] == 2
 
-    # 5. Read history
     history = scorer_service.get_score_history("domain:testtarget.com")
     assert len(history) == 2
 
-    # Read latest after version 2
     latest2 = scorer_service.get_latest_score("domain:testtarget.com")
     assert latest2["version"] == 2
     assert latest2["score"] == 80
@@ -123,7 +111,6 @@ def test_scorer_ai_scoring_mocked(scorer_service, scored_account, test_db):
     mock_response.usage_metadata.prompt_token_count = 600
     mock_response.usage_metadata.candidates_token_count = 120
 
-    # Ensure account exists in DB
     acc_writer = AccountWriter()
     db_svc = DatabaseService(db_path=test_db)
     with db_svc.get_connection() as conn:
@@ -134,8 +121,7 @@ def test_scorer_ai_scoring_mocked(scorer_service, scored_account, test_db):
     mock_client.models.generate_content.return_value = mock_response
     scorer_service.client = mock_client
 
-    # Perform scoring
-    scored = scorer_service.score_account(scored_account)
+    scored = scorer_service.score_account(ScoreAccountCommand(account=scored_account))
     assert scored is not None
     assert scored.score == 90
     assert scored.priority_tier == PriorityTier.TIER_1_CRITICAL
@@ -147,7 +133,6 @@ def test_scorer_api_endpoints(scorer_service, scored_account, test_db):
     api_app.dependency_overrides[get_scorer_service] = lambda: scorer_service
     client = TestClient(api_app)
 
-    # Save a mock score to DB first
     db_svc = DatabaseService(db_path=test_db)
     with db_svc.get_connection() as conn:
         scorer_service.writer.save_score(
@@ -169,12 +154,10 @@ def test_scorer_api_endpoints(scorer_service, scored_account, test_db):
         )
         conn.commit()
 
-    # Get latest score
     r = client.get("/api/scores/latest/domain:testtarget.com")
     assert r.status_code == 200
     assert r.json()["score"] == 85
 
-    # Get score history
     r = client.get("/api/scores/history/domain:testtarget.com")
     assert r.status_code == 200
     assert len(r.json()) >= 1

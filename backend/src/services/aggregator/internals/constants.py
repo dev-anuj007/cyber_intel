@@ -1,0 +1,18 @@
+TRANSIT_DOMAINS = {
+    "cloudflare.net",
+    "incapdns.net",
+    "akamai.net",
+    "akamaitechnologies.com",
+    "fastly.net",
+    "cloudfront.net",
+    "azureedge.net",
+    "awsglobalaccelerator.com",
+    "cdn77.org",
+    "edgekey.net",
+    "edgesuite.net",
+    "trafficmanager.net",
+    "amazonaws.com",
+    "googleusercontent.com",
+    "cloudapp.azure.com",
+    "azurewebsites.net",
+}

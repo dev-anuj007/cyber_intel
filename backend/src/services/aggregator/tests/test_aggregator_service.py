@@ -2,14 +2,20 @@
 
 import pytest
 
-from src.services.aggregator.aggregator_service import (
-    AggregatorService,
+from src.services.aggregator.aggregator_service import AggregatorService
+from src.services.aggregator.internals.builder import AccountBuilder
+from src.services.aggregator.internals.constants import TRANSIT_DOMAINS
+from src.services.aggregator.internals.domain_utils import (
     extract_root_domain_match,
     is_dynamic_ip_ptr,
     is_infrastructure_transit_domain,
     is_valid_account_domain,
     normalize_domain,
 )
+from src.services.aggregator.internals.parsers import FeatureExtractor
+from src.services.aggregator.internals.repositories.reader import JsonlReader
+from src.services.aggregator.internals.resolvers import AccountKeyResolver
+from src.services.aggregator.internals.signals import SignalDetector
 
 
 @pytest.fixture
@@ -45,6 +51,8 @@ def test_infrastructure_transit_detection():
     assert is_infrastructure_transit_domain("cloudflare.net") is True
     assert is_infrastructure_transit_domain("ec2-54-12-34-56.compute-1.amazonaws.com") is True
     assert is_infrastructure_transit_domain("mycompany.com") is False
+    assert "cloudflare.net" in TRANSIT_DOMAINS
+    assert "amazonaws.com" in TRANSIT_DOMAINS
 
 
 def test_extract_root_domain_match():
@@ -123,3 +131,52 @@ def test_aggregator_aggregate_records(aggregator_service):
     assert len(acc.assets) == 2
     assert "Apache" in acc.products
     assert "Nginx" in acc.products
+
+
+def test_feature_extractor_ip_formatting():
+    extractor = FeatureExtractor()
+    assert extractor.format_ip(3232235777) == "192.168.1.1"
+    assert extractor.format_ip("192.168.1.1") == "192.168.1.1"
+    assert extractor.format_ip(None) is None
+
+
+def test_signal_detector_rules():
+    detector = SignalDetector()
+    signals = detector.detect_signals({"max_cvss": 9.5, "kev_count": 2, "port": 8080})
+    names = [s.name for s in signals]
+    assert "high_severity_vulnerability" in names
+    assert "kev_vulnerability" in names
+    assert "non_standard_exposed_port" in names
+
+
+def test_jsonl_reader(tmp_path):
+    reader = JsonlReader()
+    file = tmp_path / "test.jsonl"
+    file.write_text('{"ip": "1.1.1.1"}\n{"ip": "8.8.8.8"}\n', encoding="utf-8")
+
+    records = reader.read(str(file))
+    assert len(records) == 2
+    assert records[0]["ip"] == "1.1.1.1"
+
+
+def test_account_key_resolver():
+    resolver = AccountKeyResolver()
+    keys = resolver.resolve({"domains": ["example.com", "cloudflare.net"], "hostnames": ["api.example.com"]})
+    assert keys == ["domain:example.com"]
+
+
+def test_account_builder():
+    builder = AccountBuilder()
+    builder.add_record(
+        account_key="domain:test.com",
+        asset_id=("1.2.3.4", 443, "app.test.com"),
+        features={"ip": "1.2.3.4", "hostname": "app.test.com", "port": 443, "product": "Nginx"},
+        signals=[],
+    )
+    accounts = builder.build()
+    assert "domain:test.com" in accounts
+    acc = accounts["domain:test.com"]
+    assert acc.domains == ["test.com"]
+    assert len(acc.assets) == 1
+    assert acc.assets[0].ip == "1.2.3.4"
+    assert acc.products == ["Nginx"]

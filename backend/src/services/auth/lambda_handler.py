@@ -10,7 +10,8 @@ from mangum import Mangum
 from src.core.config import LOGFIRE_TOKEN
 from src.core.error_handlers import register_error_handlers
 from src.services.auth.api import router as auth_router
-from src.services.logger import UserJourneyMiddleware, get_logger
+from src.services.logger.logger_service import get_logger
+from src.services.logger.middleware import UserJourneyMiddleware
 
 logger = get_logger("services.auth.lambda")
 

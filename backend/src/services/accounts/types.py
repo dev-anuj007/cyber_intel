@@ -1,7 +1,7 @@
 from enum import Enum
-from typing import Any, Dict, List, Optional, Protocol, Tuple
+from typing import Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SignalSeverity(str, Enum):
@@ -9,6 +9,13 @@ class SignalSeverity(str, Enum):
     HIGH = "high"
     MEDIUM = "medium"
     LOW = "low"
+
+
+class PriorityTier(str, Enum):
+    TIER_1_CRITICAL = "tier_1_critical"
+    TIER_2_HIGH = "tier_2_high"
+    TIER_3_MEDIUM = "tier_3_medium"
+    TIER_4_LOW = "tier_4_low"
 
 
 class SecuritySignal(BaseModel):
@@ -33,7 +40,7 @@ class AccountVersionSummary(BaseModel):
 
     version: str
     account_key: str
-    priority_tier: Optional[str] = None
+    priority_tier: Optional[Union[PriorityTier, str]] = None
     signals_count: int = 0
     assets_count: int = 0
     ai_score: Optional[int] = None
@@ -46,8 +53,8 @@ class Account(BaseModel):
     account_key: str
     version: str = "v1"
     domain: Optional[str] = None
-    domains: List[str] = []
-    priority_tier: Optional[str] = None
+    domains: List[str] = Field(default_factory=list)
+    priority_tier: Optional[Union[PriorityTier, str]] = None
     critical_signals_count: int = 0
     high_signals_count: int = 0
     medium_signals_count: int = 0
@@ -55,16 +62,16 @@ class Account(BaseModel):
     total_signals_count: int = 0
     total_assets: int = 0
     total_subdomains: int = 0
-    assets: List[Asset] = []
-    ips: List[str] = []
-    hostnames: List[str] = []
-    ports: List[int] = []
-    products: List[str] = []
-    cloud_providers: List[str] = []
-    signals: List[SecuritySignal] = []
+    assets: List[Asset] = Field(default_factory=list)
+    ips: List[str] = Field(default_factory=list)
+    hostnames: List[str] = Field(default_factory=list)
+    ports: List[int] = Field(default_factory=list)
+    products: List[str] = Field(default_factory=list)
+    cloud_providers: List[str] = Field(default_factory=list)
+    signals: List[SecuritySignal] = Field(default_factory=list)
     ai_score: Optional[int] = None
     latest_score: Optional[Any] = None
-    available_versions: List[AccountVersionSummary] = []
+    available_versions: List[AccountVersionSummary] = Field(default_factory=list)
 
 
 class SummaryStats(BaseModel):
@@ -76,77 +83,110 @@ class SummaryStats(BaseModel):
     accounts_with_critical_signals: int
 
 
-class IAccountReader(Protocol):
-    """Account data reader contract."""
+class ListAccountsQuery(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    def load_account(
-        self, conn: Any, account_key: str, version: Optional[str] = None
-    ) -> Optional[Account]: ...
-
-    def get_account_versions(self, conn: Any, account_key: str) -> List[AccountVersionSummary]: ...
-
-    def load_accounts_batch(
-        self, conn: Any, account_keys: List[str], as_dict: bool = False
-    ) -> List[Any]: ...
-
-    def load_accounts_summary_batch(
-        self, conn: Any, account_keys: List[str]
-    ) -> List[Dict[str, Any]]: ...
-
-    def search_accounts_by_domain(self, conn: Any, domain_query: str, limit: int = 10) -> List[str]: ...
-
-    def get_accounts_by_signal(
-        self, conn: Any, signal_name: str, skip: int = 0, limit: int = 20
-    ) -> Tuple[List[str], int]: ...
-
-    def get_accounts_with_critical_signals(
-        self, conn: Any, skip: int = 0, limit: int = 20, total: Optional[int] = None
-    ) -> Tuple[List[str], int]: ...
-
-    def get_all_accounts(
-        self, conn: Any, skip: int = 0, limit: int = 20, total: Optional[int] = None
-    ) -> Tuple[List[str], int]: ...
-
-    def get_accounts_by_priority_tier(
-        self, conn: Any, priority_tier: str, skip: int = 0, limit: int = 20, total: Optional[int] = None
-    ) -> Tuple[List[str], int]: ...
-
-    def get_summary_stats(self, conn: Any) -> Dict[str, int]: ...
+    skip: int = 0
+    limit: int = 20
+    priority_tier: Optional[Union[PriorityTier, str]] = None
+    has_critical_signals: Optional[bool] = None
+    search: Optional[str] = None
 
 
-class IAccountWriter(Protocol):
-    """Account data writer contract."""
+class InsertAccountCommand(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    def insert_account(self, conn: Any, account: Account, priority_tier: str) -> int: ...
-
-    def update_priority_tier(self, conn: Any, account_key: str, tier: str) -> bool: ...
-
-    def delete_account(self, conn: Any, account_key: str) -> bool: ...
-
-    def clear_accounts(self, conn: Any) -> None: ...
+    account: Account
+    priority_tier: Optional[Union[PriorityTier, str]] = None
 
 
-class IAccountsService(Protocol):
-    """Accounts business service contract."""
+class AccountsBatchQuery(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    def get_account(self, account_key: str, version: Optional[str] = None) -> Optional[Account]: ...
+    account_keys: List[str]
+    as_dict: bool = False
 
-    def get_account_versions(self, account_key: str) -> List[AccountVersionSummary]: ...
 
-    def get_accounts_batch(self, account_keys: List[str], as_dict: bool = False) -> List[Any]: ...
+class AccountsBySignalQuery(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    def search_accounts(self, query: str, limit: int = 10) -> List[Any]: ...
+    signal_name: str
+    skip: int = 0
+    limit: int = 20
 
-    def list_accounts(
-        self,
-        skip: int = 0,
-        limit: int = 20,
-        priority_tier: Optional[str] = None,
-        has_critical_signals: Optional[bool] = None,
-    ) -> Tuple[List[Any], int]: ...
 
-    def get_summary_stats(self, force_refresh: bool = False) -> Dict[str, int]: ...
+# --- API Response DTOs ---
 
-    def save_account(self, account: Account) -> int: ...
 
-    def compute_priority_tier(self, account: Account) -> str: ...
+class AccountSearchResponse(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    query: str
+    total: int
+    results: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class AccountsPaginatedResponse(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    total: int
+    skip: int
+    limit: int
+    items: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class AccountsBySignalResponse(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    signal: str
+    total: int
+    skip: int
+    limit: int
+    items: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class AccountVersionsResponse(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    account_key: str
+    total_versions: int
+    versions: List[AccountVersionSummary] = Field(default_factory=list)
+
+
+class AccountScoreHistoryResponse(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    account_key: str
+    version: Optional[str] = None
+    total_versions: int
+    history: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class AccountsHealthResponse(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    status: str = "healthy"
+    service: str = "accounts"
+    total_accounts: int = 0
+
+
+class SaveAccountResponse(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    account_id: int
+    account_key: str
+    priority_tier: Optional[Union[PriorityTier, str]] = None
+
+
+class DeleteAccountResponse(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    success: bool
+    account_key: str
+
+
+class ClearAccountsResponse(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    success: bool = True
+    message: str = "All accounts cleared"

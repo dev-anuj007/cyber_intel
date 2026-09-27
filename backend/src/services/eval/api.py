@@ -8,34 +8,32 @@ from src.core.exceptions import (
     InvalidInputError,
     NotFoundError,
 )
-from src.services.auth.api import get_current_user_optional
-from src.services.eval.eval_service import EvalService, default_eval_service
-from src.services.eval.eval_types import EvalCompareRequest, EvalRunRequest
-from src.services.jobs.jobs_service import JobsService, default_jobs_service
-from src.services.jobs.types import JobStatus, JobSubmitResponse
-from src.services.logger import get_logger
+from src.services.auth.dependencies import get_current_user_optional
+from src.services.eval.dependencies import get_eval_service
+from src.services.eval.protocols import IEvalService
+from src.services.eval.types import EvalCompareRequest, EvalRunRequest
+from src.services.jobs.dependencies import get_jobs_service
+from src.services.jobs.protocols import IJobsService
+from src.services.jobs.types import (
+    JobStatus,
+    JobSubmitResponse,
+    SubmitJobCommand,
+)
+from src.services.logger.logger_service import get_logger
 
 logger = get_logger("eval.api")
 
 router = APIRouter(prefix="/api/eval", tags=["Evaluation Harness & Benchmarks"])
 
 
-def get_eval_service() -> EvalService:
-    return default_eval_service
-
-
-def get_jobs_service() -> JobsService:
-    return default_jobs_service
-
-
 @router.get("/prompts")
-def list_eval_prompts(eval_service: EvalService = Depends(get_eval_service)):
+def list_eval_prompts(eval_service: IEvalService = Depends(get_eval_service)):
     prompts = eval_service.list_prompts()
     return {"prompts": prompts}
 
 
 @router.get("/dataset")
-def get_eval_dataset(eval_service: EvalService = Depends(get_eval_service)):
+def get_eval_dataset(eval_service: IEvalService = Depends(get_eval_service)):
     dataset = eval_service.get_default_dataset()
     return {"dataset": dataset, "total": len(dataset)}
 
@@ -44,8 +42,8 @@ def get_eval_dataset(eval_service: EvalService = Depends(get_eval_service)):
 def execute_eval_run(
     req: EvalRunRequest,
     current_user: Optional[dict] = Depends(get_current_user_optional),
-    eval_service: EvalService = Depends(get_eval_service),
-    jobs_service: JobsService = Depends(get_jobs_service),
+    eval_service: IEvalService = Depends(get_eval_service),
+    jobs_service: IJobsService = Depends(get_jobs_service),
 ):
     if not req.dry_run:
         if not current_user:
@@ -74,13 +72,15 @@ def execute_eval_run(
     }
 
     job_id = jobs_service.submit_job(
-        job_type="eval_run",
-        title=title,
-        payload=payload,
-        progress_total=sample_count,
-        user_id=user_id,
-        max_retries=1,
-        auto_start=True,
+        SubmitJobCommand(
+            job_type="eval_run",
+            title=title,
+            payload=payload,
+            progress_total=sample_count,
+            user_id=user_id,
+            max_retries=1,
+            auto_start=True,
+        )
     )
 
     job_info = jobs_service.get_job(job_id)
@@ -99,8 +99,8 @@ def execute_eval_run(
 def execute_eval_compare(
     req: EvalCompareRequest,
     current_user: Optional[dict] = Depends(get_current_user_optional),
-    eval_service: EvalService = Depends(get_eval_service),
-    jobs_service: JobsService = Depends(get_jobs_service),
+    eval_service: IEvalService = Depends(get_eval_service),
+    jobs_service: IJobsService = Depends(get_jobs_service),
 ):
     if not req.dry_run and not (req.file_a and req.file_b):
         if not current_user:
@@ -136,13 +136,15 @@ def execute_eval_compare(
     }
 
     job_id = jobs_service.submit_job(
-        job_type="eval_compare",
-        title=title,
-        payload=payload,
-        progress_total=sample_count,
-        user_id=user_id,
-        max_retries=1,
-        auto_start=True,
+        SubmitJobCommand(
+            job_type="eval_compare",
+            title=title,
+            payload=payload,
+            progress_total=sample_count,
+            user_id=user_id,
+            max_retries=1,
+            auto_start=True,
+        )
     )
 
     job_info = jobs_service.get_job(job_id)
@@ -158,7 +160,7 @@ def execute_eval_compare(
 
 
 @router.get("/history")
-def list_eval_history(eval_service: EvalService = Depends(get_eval_service)):
+def list_eval_history(eval_service: IEvalService = Depends(get_eval_service)):
     history = eval_service.list_history()
     return {"history": history}
 
@@ -166,7 +168,7 @@ def list_eval_history(eval_service: EvalService = Depends(get_eval_service)):
 @router.get("/results/{filename}")
 def get_eval_result_file(
     filename: str,
-    eval_service: EvalService = Depends(get_eval_service),
+    eval_service: IEvalService = Depends(get_eval_service),
 ):
     try:
         return eval_service.get_result_file(filename)

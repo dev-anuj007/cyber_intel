@@ -60,7 +60,10 @@ def test_metric_and_string_formatters():
     assert format_latency(None) == "0ms"
 
     assert format_truncated_list(["a", "b", "c"], max_items=5) == "a, b, c"
-    assert format_truncated_list(["a", "b", "c", "d"], max_items=2) == "a, b, ... (+2 more)"
+    assert (
+        format_truncated_list(["a", "b", "c", "d"], max_items=2)
+        == "a, b, ... (+2 more)"
+    )
     assert format_truncated_list([]) == "None"
 
     assert "T" in format_iso_datetime()

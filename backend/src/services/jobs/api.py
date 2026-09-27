@@ -3,21 +3,20 @@ from typing import Optional
 from fastapi import APIRouter, Depends
 
 from src.core.exceptions import InvalidInputError, NotFoundError
-from src.services.auth.api import get_current_user_optional
-from src.services.jobs.jobs_service import JobsService, default_jobs_service
+from src.services.auth.dependencies import get_current_user_optional
+from src.services.jobs.dependencies import get_jobs_service
+from src.services.jobs.protocols import IJobsService
 from src.services.jobs.types import (
     JobDetail,
+    JobListQuery,
     JobListResponse,
     JobStatus,
     JobSubmitRequest,
     JobSubmitResponse,
+    SubmitJobCommand,
 )
 
 router = APIRouter(prefix="/api/jobs", tags=["Background Jobs"])
-
-
-def get_jobs_service() -> JobsService:
-    return default_jobs_service
 
 
 @router.post("", response_model=JobSubmitResponse, status_code=200)
@@ -26,7 +25,7 @@ def get_jobs_service() -> JobsService:
 def submit_job(
     req: JobSubmitRequest,
     current_user: Optional[dict] = Depends(get_current_user_optional),
-    jobs_service: JobsService = Depends(get_jobs_service),
+    jobs_service: IJobsService = Depends(get_jobs_service),
 ):
     """Submit a generic asynchronous job to the background queue."""
     if not req.job_type or not req.job_type.strip():
@@ -34,13 +33,16 @@ def submit_job(
 
     user_id = current_user.get("id") if current_user else None
     title = (req.title or "").strip() or f"{req.job_type.strip()} Task"
+
     job_id = jobs_service.submit_job(
-        job_type=req.job_type.strip(),
-        title=title,
-        payload=req.payload,
-        user_id=user_id,
-        max_retries=req.max_retries,
-        auto_start=True,
+        SubmitJobCommand(
+            job_type=req.job_type.strip(),
+            title=title,
+            payload=req.payload,
+            user_id=user_id,
+            max_retries=req.max_retries,
+            auto_start=True,
+        )
     )
 
     return JobSubmitResponse(
@@ -58,29 +60,17 @@ def list_jobs(
     limit: int = 20,
     job_type: Optional[str] = None,
     status: Optional[str] = None,
-    jobs_service: JobsService = Depends(get_jobs_service),
+    jobs_service: IJobsService = Depends(get_jobs_service),
 ):
-    """List background jobs with optional filtering by type and status."""
-    items, total = jobs_service.list_jobs(
-        skip=skip,
-        limit=limit,
-        job_type=job_type,
-        status=status,
-    )
-    return JobListResponse(
-        total=total,
-        skip=skip,
-        limit=limit,
-        items=items,
-    )
+    items, total = jobs_service.list_jobs(JobListQuery(skip=skip, limit=limit, job_type=job_type, status=status))
+    return JobListResponse(total=total, skip=skip, limit=limit, items=items)
 
 
 @router.get("/{job_id}", response_model=JobDetail)
 def get_job(
     job_id: str,
-    jobs_service: JobsService = Depends(get_jobs_service),
+    jobs_service: IJobsService = Depends(get_jobs_service),
 ):
-    """Get full status and result payload for a background job."""
     job = jobs_service.get_job(job_id)
     if not job:
         raise NotFoundError(f"Job '{job_id}' not found", code="JOB_NOT_FOUND")
@@ -90,9 +80,8 @@ def get_job(
 @router.post("/{job_id}/retry", response_model=JobSubmitResponse)
 def retry_job(
     job_id: str,
-    jobs_service: JobsService = Depends(get_jobs_service),
+    jobs_service: IJobsService = Depends(get_jobs_service),
 ):
-    """Retry a failed or stalled background job."""
     try:
         retried_id = jobs_service.retry_job(job_id, auto_start=True)
         return JobSubmitResponse(
@@ -109,8 +98,8 @@ def retry_job(
 @router.post("/{job_id}/cancel")
 def cancel_job(
     job_id: str,
-    jobs_service: JobsService = Depends(get_jobs_service),
+    jobs_service: IJobsService = Depends(get_jobs_service),
 ):
-    """Cancel a pending or running background job."""
     jobs_service.cancel_job(job_id)
     return {"success": True, "job_id": job_id, "status": "cancelled"}
+

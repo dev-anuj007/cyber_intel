@@ -41,8 +41,41 @@ export interface ScoreHistoryItem {
 
 export interface ScoreHistoryResponse {
   account_key: string;
+  version?: string | null;
   total_versions: number;
   history: ScoreHistoryItem[];
+}
+
+export interface AccountSearchResponse {
+  query: string;
+  total: number;
+  results: Account[];
+}
+
+export interface AccountsPaginatedResponse {
+  total: number;
+  skip: number;
+  limit: number;
+  items: Account[];
+}
+
+export interface AccountsBySignalResponse {
+  signal: string;
+  total: number;
+  skip: number;
+  limit: number;
+  items: Account[];
+}
+
+export interface DeleteAccountResponse {
+  success: boolean;
+  account_key: string;
+}
+
+export interface AccountVersionsResponse {
+  account_key: string;
+  total_versions: number;
+  versions: AccountVersionSummary[];
 }
 
 export interface AccountVersionSummary {

@@ -13,6 +13,12 @@ import {
   ScannerEngineInfo,
   PromptTemplateInfo,
   PromptRegisterRequest,
+  ScoreHistoryResponse,
+  AccountSearchResponse,
+  AccountsPaginatedResponse,
+  AccountsBySignalResponse,
+  AccountVersionsResponse,
+  DeleteAccountResponse,
 } from "./types";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
@@ -98,12 +104,12 @@ class APIClient {
 
   // Platform & Accounts
   async getSummary(): Promise<SummaryStats> {
-    const response = await this.client.get<SummaryStats>("/summary");
+    const response = await this.client.get<SummaryStats>("/accounts/summary");
     return response.data;
   }
 
-  async listAccounts(skip: number = 0, limit: number = 20, filters?: any) {
-    const response = await this.client.get("/accounts", {
+  async listAccounts(skip: number = 0, limit: number = 20, filters?: any): Promise<AccountsPaginatedResponse> {
+    const response = await this.client.get<AccountsPaginatedResponse>("/accounts", {
       params: { skip, limit, ...filters },
     });
     return response.data;
@@ -116,7 +122,7 @@ class APIClient {
   }
 
   async getAccountVersions(accountKey: string): Promise<AccountVersionSummary[]> {
-    const response = await this.client.get<{ account_key: string; total_versions: number; versions: AccountVersionSummary[] }>(
+    const response = await this.client.get<AccountVersionsResponse>(
       `/accounts/${encodeURIComponent(accountKey)}/versions`
     );
     return response.data?.versions || [];
@@ -143,23 +149,37 @@ class APIClient {
     return response.data;
   }
 
-  async getScoreHistory(accountKey: string, version?: string): Promise<any> {
+  async getScoreHistory(accountKey: string, version?: string): Promise<ScoreHistoryResponse> {
     const params = version ? { version } : {};
-    const response = await this.client.get(`/accounts/${encodeURIComponent(accountKey)}/score-history`, { params });
+    const response = await this.client.get<ScoreHistoryResponse>(
+      `/accounts/${encodeURIComponent(accountKey)}/score-history`,
+      { params }
+    );
     return response.data;
   }
 
-  async searchAccounts(query: string) {
-    const response = await this.client.get("/search", {
+  async searchAccounts(query: string): Promise<AccountSearchResponse> {
+    const response = await this.client.get<AccountSearchResponse>("/accounts/search", {
       params: { q: query },
     });
     return response.data;
   }
 
-  async getAccountsBySignal(signalName: string, skip: number = 0, limit: number = 20) {
-    const response = await this.client.get(`/accounts/by-signal/${signalName}`, {
+  async getAccountsBySignal(
+    signalName: string,
+    skip: number = 0,
+    limit: number = 20
+  ): Promise<AccountsBySignalResponse> {
+    const response = await this.client.get<AccountsBySignalResponse>(`/accounts/signal/${signalName}`, {
       params: { skip, limit },
     });
+    return response.data;
+  }
+
+  async deleteAccount(accountKey: string): Promise<DeleteAccountResponse> {
+    const response = await this.client.delete<DeleteAccountResponse>(
+      `/accounts/${encodeURIComponent(accountKey)}`
+    );
     return response.data;
   }
 

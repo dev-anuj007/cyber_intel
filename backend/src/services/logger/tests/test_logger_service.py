@@ -10,10 +10,11 @@ from src.services.logger.context import (
     set_current_trace_id,
     update_journey_context,
 )
-from src.services.logger.internal.console_logger import ConsoleLogger
-from src.services.logger.internal.logfire_logger import LogfireLogger
+from src.services.logger.internals.console_logger import ConsoleLogger
+from src.services.logger.internals.logfire_logger import LogfireLogger
 from src.services.logger.logger_service import LoggerService
 from src.services.logger.middleware import UserJourneyMiddleware
+
 
 
 def test_logger_context():

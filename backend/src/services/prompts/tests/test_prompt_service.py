@@ -5,15 +5,18 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.services.prompts.api import get_prompt_service, router
+from src.services.prompts.dependencies import (
+    create_prompt_service,
+    get_prompt_dependency_context,
+)
 from src.services.prompts.prompt_service import PromptService
-from src.services.prompts.repositories.reader import LocalPromptRepository
+from src.services.prompts.protocols import IPromptReader, IPromptService, IPromptWriter
 from src.services.prompts.templates import CANONICAL_PROMPTS_LIST, get_prompt_template
 
 
 @pytest.fixture
 def prompt_service():
-    repo = LocalPromptRepository()
-    return PromptService(repository=repo)
+    return create_prompt_service()
 
 
 def test_list_and_get_prompts(prompt_service):

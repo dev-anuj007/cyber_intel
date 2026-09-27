@@ -1,16 +1,32 @@
-"""Comprehensive Pytest Test Suite for Accounts Service, Repositories, and API."""
-
-from unittest.mock import MagicMock, patch
+from datetime import datetime
 
 import pytest
 from fastapi.testclient import TestClient
 
 from src.services.accounts.accounts_service import AccountsService
-from src.services.accounts.api import get_accounts_service
-from src.services.accounts.repositories.reader import AccountReader
-from src.services.accounts.repositories.writer import AccountWriter
-from src.services.accounts.types import Account, Asset, SecuritySignal, SignalSeverity
+from src.services.accounts.dependencies import (
+    AccountsServiceDependencyContext,
+    create_accounts_service,
+    default_accounts_service,
+    get_accounts_dependency_context,
+    get_accounts_service,
+)
+from src.services.accounts.internals.repositories.reader import AccountReader
+from src.services.accounts.internals.repositories.writer import AccountWriter
+from src.services.accounts.types import (
+    Account,
+    AccountsBatchQuery,
+    AccountsBySignalQuery,
+    Asset,
+    InsertAccountCommand,
+    ListAccountsQuery,
+    PriorityTier,
+    SecuritySignal,
+    SignalSeverity,
+)
 from src.services.database.database_service import DatabaseService
+from src.services.scorer.internals.repositories.writer import ScoreWriter
+from src.services.scorer.types import AccountScore
 
 
 @pytest.fixture
@@ -23,9 +39,7 @@ def test_db(tmp_path):
 
 @pytest.fixture
 def accounts_service(test_db):
-    reader = AccountReader()
-    writer = AccountWriter()
-    return AccountsService(reader=reader, writer=writer, db_path=test_db)
+    return create_accounts_service(db_path=test_db)
 
 
 @pytest.fixture
@@ -73,8 +87,9 @@ def sample_account():
 
 def test_accounts_crud_and_queries(accounts_service, sample_account, test_db):
     # 1. Save account
-    acc_id = accounts_service.save_account(sample_account)
-    assert acc_id is not None
+    save_res = accounts_service.save_account(sample_account)
+    assert save_res.account_id is not None
+    assert save_res.account_key == "domain:acme.corp"
 
     # 2. Get account
     fetched = accounts_service.get_account("domain:acme.corp")
@@ -95,40 +110,46 @@ def test_accounts_crud_and_queries(accounts_service, sample_account, test_db):
 
     # 4. Search accounts by domain
     search_results = accounts_service.search_accounts("acme")
-    assert len(search_results) >= 1
-    assert search_results[0]["account_key"] == "domain:acme.corp"
+    assert search_results.total >= 1
+    assert len(search_results.results) >= 1
+    assert search_results.results[0]["account_key"] == "domain:acme.corp"
 
     # Search with empty results
-    assert accounts_service.search_accounts("nonexistent") == []
+    assert accounts_service.search_accounts("nonexistent").results == []
 
     # 5. List accounts by tier
-    items, total = accounts_service.list_accounts(priority_tier="tier_1_critical")
-    assert total >= 1
-    assert len(items) >= 1
+    res_tier = accounts_service.list_accounts(
+        ListAccountsQuery(priority_tier="tier_1_critical")
+    )
+    assert res_tier.total >= 1
+    assert len(res_tier.items) >= 1
 
     # List with critical signals filter
-    items_crit, total_crit = accounts_service.list_accounts(has_critical_signals=True)
-    assert total_crit >= 1
+    res_crit = accounts_service.list_accounts(
+        ListAccountsQuery(has_critical_signals=True)
+    )
+    assert res_crit.total >= 1
 
     # List all accounts
-    items_all, total_all = accounts_service.list_accounts()
-    assert total_all >= 1
+    res_all = accounts_service.list_accounts()
+    assert res_all.total >= 1
 
     # 6. Get accounts by signal
-    sig_items, sig_total = accounts_service.get_accounts_by_signal("kev_vulnerability")
-    assert sig_total >= 1
-    assert len(sig_items) >= 1
+    sig_res = accounts_service.get_accounts_by_signal(
+        AccountsBySignalQuery(signal_name="kev_vulnerability")
+    )
+    assert sig_res.total >= 1
+    assert len(sig_res.items) >= 1
 
     # 7. Summary stats
-    stats = accounts_service.get_summary_stats(force_refresh=True)
-    assert stats["total_accounts"] >= 1
-    assert stats["critical_count"] >= 1
-    # Cached summary stats
-    stats_cached = accounts_service.get_summary_stats(force_refresh=False)
-    assert stats_cached["total_accounts"] == stats["total_accounts"]
+    stats = accounts_service.get_summary_stats()
+    assert stats.total_accounts >= 1
+    assert stats.critical_count >= 1
 
     # 8. Delete account
-    assert accounts_service.delete_account("domain:acme.corp") is True
+    del_res = accounts_service.delete_account("domain:acme.corp")
+    assert del_res.success is True
+    assert del_res.account_key == "domain:acme.corp"
     assert accounts_service.get_account("domain:acme.corp") is None
 
 
@@ -145,12 +166,16 @@ def test_reader_writer_methods(test_db, sample_account):
         writer.update_priority_tier(conn, "domain:acme.corp", "tier_2_high")
 
         # Load batch dict
-        batch_dict = reader.load_accounts_batch(conn, ["domain:acme.corp"], as_dict=True)
+        batch_dict = reader.load_accounts_batch(
+            conn, ["domain:acme.corp"], as_dict=True
+        )
         assert len(batch_dict) == 1
         assert batch_dict[0]["account_key"] == "domain:acme.corp"
 
         # Load batch object
-        batch_obj = reader.load_accounts_batch(conn, ["domain:acme.corp"], as_dict=False)
+        batch_obj = reader.load_accounts_batch(
+            conn, ["domain:acme.corp"], as_dict=False
+        )
         assert len(batch_obj) == 1
         assert batch_obj[0].account_key == "domain:acme.corp"
 
@@ -159,7 +184,13 @@ def test_reader_writer_methods(test_db, sample_account):
         assert reader.load_accounts_summary_batch(conn, []) == []
 
         # Tiers testing
-        for tier in ["tier_1_critical", "tier_2_high", "tier_3_medium", "tier_4_low", "invalid_tier"]:
+        for tier in [
+            "tier_1_critical",
+            "tier_2_high",
+            "tier_3_medium",
+            "tier_4_low",
+            "invalid_tier",
+        ]:
             keys, cnt = reader.get_accounts_by_priority_tier(conn, tier)
             assert isinstance(keys, list)
 
@@ -167,12 +198,16 @@ def test_reader_writer_methods(test_db, sample_account):
         crit_keys, crit_cnt = reader.get_accounts_with_critical_signals(conn)
         assert isinstance(crit_keys, list)
 
+        # Clear child entities directly
+        writer.clear_account_entities_by_id(conn, acc_id)
+
         # Delete
-        writer.delete_account(conn, "domain:acme.corp")
+        assert writer.delete_account(conn, "domain:acme.corp") is True
+        assert writer.delete_account(conn, "nonexistent.corp") is False
 
 
 def test_accounts_api_endpoints(test_db, sample_account):
-    service = AccountsService(reader=AccountReader(), writer=AccountWriter(), db_path=test_db)
+    service = create_accounts_service(db_path=test_db)
     service.save_account(sample_account)
 
     from fastapi import FastAPI
@@ -187,9 +222,8 @@ def test_accounts_api_endpoints(test_db, sample_account):
 
     # Health
     r = client.get("/api/accounts/health")
-    if r.status_code == 404:
-        r = client.get("/api/accounts")
     assert r.status_code == 200
+    assert r.json()["service"] == "accounts"
 
     # List
     r = client.get("/api/accounts")
@@ -199,6 +233,7 @@ def test_accounts_api_endpoints(test_db, sample_account):
     # Summary stats
     r = client.get("/api/accounts/summary")
     assert r.status_code == 200
+    assert r.json()["total_accounts"] >= 1
 
     # Get single
     r = client.get("/api/accounts/domain:acme.corp")
@@ -210,12 +245,24 @@ def test_accounts_api_endpoints(test_db, sample_account):
     assert r.status_code == 404
 
     # Search domain
-    r = client.get("/api/accounts/search/domain?q=acme")
+    r = client.get("/api/accounts/search?q=acme")
     assert r.status_code == 200
+    assert r.json()["total"] >= 1
 
     # By signal
     r = client.get("/api/accounts/signal/kev_vulnerability")
     assert r.status_code == 200
+    assert r.json()["total"] >= 1
+
+    # Versions
+    r = client.get("/api/accounts/domain:acme.corp/versions")
+    assert r.status_code == 200
+    assert "versions" in r.json()
+
+    # Score history
+    r = client.get("/api/accounts/domain:acme.corp/score-history")
+    assert r.status_code == 200
+    assert "history" in r.json()
 
     # Delete
     r = client.delete("/api/accounts/domain:acme.corp")
@@ -225,7 +272,7 @@ def test_accounts_api_endpoints(test_db, sample_account):
 
 
 def test_account_multi_version_sync_and_resolution(test_db):
-    service = AccountsService(reader=AccountReader(), writer=AccountWriter(), db_path=test_db)
+    service = create_accounts_service(db_path=test_db)
 
     # 1. Insert v1
     v1_account = Account(
@@ -235,7 +282,10 @@ def test_account_multi_version_sync_and_resolution(test_db):
         domains=["testcorp.com"],
         signals=[
             SecuritySignal(
-                name="open_port_22", severity=SignalSeverity.MEDIUM, category="network", evidence="Port 22 open"
+                name="open_port_22",
+                severity=SignalSeverity.MEDIUM,
+                category="network",
+                evidence="Port 22 open",
             )
         ],
         ports=[22],
@@ -250,7 +300,10 @@ def test_account_multi_version_sync_and_resolution(test_db):
         domains=["testcorp.com"],
         signals=[
             SecuritySignal(
-                name="open_port_22", severity=SignalSeverity.MEDIUM, category="network", evidence="Port 22 open"
+                name="open_port_22",
+                severity=SignalSeverity.MEDIUM,
+                category="network",
+                evidence="Port 22 open",
             ),
             SecuritySignal(
                 name="critical_cve",
@@ -264,10 +317,11 @@ def test_account_multi_version_sync_and_resolution(test_db):
     service.save_account(v2_account)
 
     # 3. Test get_account_versions
-    versions = service.get_account_versions("testcorp.com")
-    assert len(versions) == 2
-    assert versions[0].version == "v2"
-    assert versions[1].version == "v1"
+    versions_res = service.get_account_versions("testcorp.com")
+    assert versions_res.total_versions == 2
+    assert len(versions_res.versions) == 2
+    assert versions_res.versions[0].version == "v2"
+    assert versions_res.versions[1].version == "v1"
 
     # 4. Default query without version should return latest snapshot (v2)
     latest_acc = service.get_account("domain:testcorp.com")
@@ -283,11 +337,6 @@ def test_account_multi_version_sync_and_resolution(test_db):
     assert len(v1_loaded.signals) == 1
 
     # 6. Score v2 and verify listing reflects score for the domain
-    from datetime import datetime
-
-    from src.services.scorer.repositories.writer import ScoreWriter
-    from src.services.scorer.types import AccountScore, PriorityTier
-
     score_writer = ScoreWriter()
     with DatabaseService(db_path=test_db).get_connection() as conn:
         score_writer.save_score(
@@ -310,7 +359,158 @@ def test_account_multi_version_sync_and_resolution(test_db):
     assert resolved_acc.ai_score == 92
 
     # Verify summary batch contains AI score
+    reader = AccountReader()
     with DatabaseService(db_path=test_db).get_connection() as conn:
-        summaries = service.reader.load_accounts_summary_batch(conn, ["domain:testcorp.com"])
+        summaries = reader.load_accounts_summary_batch(conn, ["domain:testcorp.com"])
         assert len(summaries) == 1
         assert summaries[0]["ai_score"] == 92
+
+
+def test_priority_tier_computation(accounts_service):
+    # Tier 1 Critical: Any critical signal
+    acc_crit = Account(
+        account_key="test:crit",
+        signals=[
+            SecuritySignal(
+                name="cve",
+                severity=SignalSeverity.CRITICAL,
+                category="vuln",
+                evidence="crit",
+            ),
+        ],
+    )
+    assert (
+        accounts_service.compute_priority_tier(acc_crit) == PriorityTier.TIER_1_CRITICAL
+    )
+
+    # Tier 2 High: High severity and >= 2 signals
+    acc_high_multi = Account(
+        account_key="test:high_multi",
+        signals=[
+            SecuritySignal(
+                name="h1", severity=SignalSeverity.HIGH, category="vuln", evidence="e1"
+            ),
+            SecuritySignal(
+                name="m1",
+                severity=SignalSeverity.MEDIUM,
+                category="vuln",
+                evidence="e2",
+            ),
+        ],
+    )
+    assert (
+        accounts_service.compute_priority_tier(acc_high_multi)
+        == PriorityTier.TIER_2_HIGH
+    )
+
+    # Tier 3 Medium: High severity but only 1 signal
+    acc_high_single = Account(
+        account_key="test:high_single",
+        signals=[
+            SecuritySignal(
+                name="h1", severity=SignalSeverity.HIGH, category="vuln", evidence="e1"
+            ),
+        ],
+    )
+    assert (
+        accounts_service.compute_priority_tier(acc_high_single)
+        == PriorityTier.TIER_3_MEDIUM
+    )
+
+    # Tier 3 Medium: Medium or low signals (> 0 signals)
+    acc_med = Account(
+        account_key="test:med",
+        signals=[
+            SecuritySignal(
+                name="m1",
+                severity=SignalSeverity.MEDIUM,
+                category="vuln",
+                evidence="e1",
+            ),
+        ],
+    )
+    assert accounts_service.compute_priority_tier(acc_med) == PriorityTier.TIER_3_MEDIUM
+
+    # Tier 4 Low: No signals
+    acc_empty = Account(account_key="test:empty", signals=[])
+    assert accounts_service.compute_priority_tier(acc_empty) == PriorityTier.TIER_4_LOW
+
+
+def test_command_and_query_objects(accounts_service, sample_account):
+    # Insert via InsertAccountCommand
+    cmd = InsertAccountCommand(account=sample_account, priority_tier="tier_2_high")
+    save_res = accounts_service.save_account(cmd)
+    assert save_res.account_id is not None
+    assert save_res.priority_tier == "tier_2_high"
+
+    # Batch Query via AccountsBatchQuery
+    batch_q = AccountsBatchQuery(account_keys=["domain:acme.corp"], as_dict=True)
+    batch_res = accounts_service.get_accounts_batch(batch_q)
+    assert len(batch_res) == 1
+    assert isinstance(batch_res[0], dict)
+
+    # List Query via ListAccountsQuery
+    list_q = ListAccountsQuery(skip=0, limit=10, priority_tier="tier_2_high")
+    list_res = accounts_service.list_accounts(list_q)
+    assert list_res.total >= 1
+    assert len(list_res.items) >= 1
+
+
+def test_clear_all(accounts_service, sample_account):
+    accounts_service.save_account(sample_account)
+    stats_before = accounts_service.get_summary_stats()
+    assert stats_before.total_accounts >= 1
+
+    # Clear all
+    clear_res = accounts_service.clear_all()
+    assert clear_res.success is True
+    stats_after = accounts_service.get_summary_stats()
+    assert stats_after.total_accounts == 0
+
+
+def test_dependency_injection_context(test_db):
+    ctx = get_accounts_dependency_context(db_path=test_db)
+    assert isinstance(ctx, AccountsServiceDependencyContext)
+    assert ctx.reader is not None
+    assert ctx.writer is not None
+
+    svc = create_accounts_service(context=ctx)
+    assert isinstance(svc, AccountsService)
+
+    # Test default proxy
+    assert hasattr(default_accounts_service, "get_account")
+
+
+def test_empty_search_and_edge_cases(accounts_service):
+    assert accounts_service.search_accounts("").results == []
+    assert accounts_service.search_accounts("   ").results == []
+    assert accounts_service.get_account("") is None
+    assert accounts_service.get_account_versions("").versions == []
+
+
+def test_lambda_handler_health():
+    from src.services.accounts.lambda_handler import app
+
+    client = TestClient(app)
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json()["service"] == "accounts-microservice"
+
+
+def test_empty_accounts_summary_endpoint(test_db):
+    service = create_accounts_service(db_path=test_db)
+    service.clear_all()
+
+    from fastapi import FastAPI
+
+    from src.services.accounts.api import router
+
+    api_app = FastAPI()
+    api_app.include_router(router)
+    api_app.dependency_overrides[get_accounts_service] = lambda: service
+    client = TestClient(api_app)
+
+    # Empty summary should return 503 external service error
+    r = client.get("/api/accounts/summary")
+    assert r.status_code == 503
+    api_app.dependency_overrides.clear()

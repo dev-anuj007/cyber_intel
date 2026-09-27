@@ -1,0 +1,301 @@
+import asyncio
+import socket
+import ssl
+import urllib.error
+import urllib.request
+from typing import Any, Dict, List, Optional, Set
+
+from src.services.accounts.types import Asset, SecuritySignal
+from src.services.aggregator.aggregator_service import AggregatorService
+from src.services.aggregator.internals.domain_utils import (
+    is_dynamic_ip_ptr,
+    normalize_domain,
+)
+from src.services.crawler.internals.scanners.constants import (
+    CLOUD_SIGNATURES,
+    COMMON_SUBDOMAINS,
+)
+from src.services.crawler.internals.scanners.types import (
+    ProbeResult,
+    ScannerEngineOptions,
+    ScanResult,
+)
+from src.services.logger.logger_service import BaseLogger, get_logger
+
+
+class StandardCrawlerScanner:
+    scanner_type: str = "standard"
+    display_name: str = "Standard Network & Banner Crawler"
+    description: str = (
+        "Multi-threaded DNS resolution, common subdomain enumeration, port probing, "
+        "HTTP banner analysis, and cloud infrastructure fingerprinting."
+    )
+
+    def __init__(
+        self,
+        timeout: float = 0.8,
+        max_subdomains: int = 12,
+        ports: Optional[List[int]] = None,
+        aggregator_service: Optional[AggregatorService] = None,
+        logger: Optional[BaseLogger] = None,
+    ):
+        self.timeout = timeout
+        self.max_subdomains = max_subdomains
+        self.ports = ports or [80, 443, 8080, 8443]
+        self.aggregator_service = aggregator_service or AggregatorService()
+        self._logger = logger or get_logger("crawler.scanners.standard")
+
+    async def scan_async(
+        self,
+        domain: str,
+        options: Optional[ScannerEngineOptions] = None,
+    ) -> ScanResult:
+        opts = options or ScannerEngineOptions()
+        clean_domain = normalize_domain(domain)
+        enable_subdomains = opts.enable_subdomains
+        ports_to_scan = opts.custom_ports or self.ports
+
+        discovered_hosts: List[str] = []
+        root_ip = await asyncio.to_thread(self._resolve_ip, clean_domain)
+        if root_ip:
+            discovered_hosts.append(clean_domain)
+
+        if enable_subdomains:
+            subs_to_test = COMMON_SUBDOMAINS[: self.max_subdomains]
+
+            async def resolve_sub(sub: str):
+                sub_host = f"{sub}.{clean_domain}"
+                sub_ip = await asyncio.to_thread(self._resolve_ip, sub_host)
+                return sub_host, sub_ip
+
+            sub_results = await asyncio.gather(*[resolve_sub(s) for s in subs_to_test], return_exceptions=True)
+            for item in sub_results:
+                if isinstance(item, tuple):
+                    sub_host, sub_ip = item
+                    is_dynamic = is_dynamic_ip_ptr(sub_host)
+                    if sub_ip and not is_dynamic and sub_host not in discovered_hosts:
+                        discovered_hosts.append(sub_host)
+
+        if not discovered_hosts and not root_ip:
+            return ScanResult(
+                domain=clean_domain,
+                scanner_type=self.scanner_type,
+                assets=[],
+                signals=[],
+                ips=[],
+                hostnames=[],
+                ports=[],
+                products=[],
+                cloud_providers=[],
+                metadata={
+                    "engine": "standard_network_crawler",
+                    "resolved": False,
+                },
+            )
+
+        assets: List[Asset] = []
+        unique_ips: Set[str] = set()
+        if root_ip:
+            unique_ips.add(root_ip)
+        unique_ports: Set[int] = set()
+        products: Set[str] = set()
+        cloud_providers: Set[str] = set()
+        records_for_signals: List[dict] = []
+
+        host_to_ip: Dict[str, Optional[str]] = {}
+
+        async def resolve_host(h: str):
+            resolved = await asyncio.to_thread(self._resolve_ip, h)
+            return h, resolved
+
+        host_results = await asyncio.gather(*[resolve_host(h) for h in discovered_hosts], return_exceptions=True)
+        for item in host_results:
+            if isinstance(item, tuple):
+                h, resolved = item
+                host_to_ip[h] = resolved
+                if resolved:
+                    unique_ips.add(resolved)
+
+        probe_tasks = []
+        for host in discovered_hosts:
+            ip = host_to_ip.get(host)
+            if not ip:
+                continue
+            target_addr = ip
+            for port in ports_to_scan:
+                probe_tasks.append((host, ip, target_addr, port))
+
+        async def async_probe_worker(item) -> Optional[ProbeResult]:
+            h, ip_addr, target, p = item
+            is_open = await asyncio.to_thread(self._check_port_open, target, p)
+            if is_open:
+                banner = await asyncio.to_thread(self._probe_http_banner, h, p)
+                return {
+                    "host": h,
+                    "ip": ip_addr,
+                    "port": p,
+                    "banner": banner,
+                }
+            return None
+
+        probe_results = await asyncio.gather(
+            *[async_probe_worker(task) for task in probe_tasks], return_exceptions=True
+        )
+
+        for res in probe_results:
+            if isinstance(res, dict) and res:
+                p_port: int = res["port"]
+                p_host: str = res["host"]
+                p_ip: Optional[str] = res["ip"]
+                p_banner: Dict[str, Any] = res["banner"] if isinstance(res.get("banner"), dict) else {}
+
+                unique_ports.add(p_port)
+                assets.append(Asset(ip=p_ip, port=p_port, hostname=p_host))
+
+                for tech in p_banner.get("technologies", []):
+                    products.add(tech)
+                for cp in p_banner.get("cloud_providers", []):
+                    cloud_providers.add(cp)
+
+                srv_str = str(p_banner.get("server", "")).lower()
+                is_eol = "apache/2.2" in srv_str
+                rec_features = {
+                    "ip": p_ip,
+                    "port": p_port,
+                    "hostname": p_host,
+                    "domains": [clean_domain],
+                    "product": p_banner.get("server", ""),
+                    "cloud_providers": p_banner.get("cloud_providers", []),
+                    "tags": ["eol-product"] if is_eol else [],
+                    "vulns": {},
+                }
+
+                if p_port not in (80, 443):
+                    rec_features["port"] = p_port
+
+                records_for_signals.append(rec_features)
+
+        signals: List[SecuritySignal] = []
+        signal_keys = set()
+        for rec in records_for_signals:
+            detected = self.aggregator_service.detect_signals(rec)
+            for s in detected:
+                s_sev = s.severity.value if hasattr(s.severity, "value") else str(s.severity)
+                s_key = (s.name, s_sev, s.evidence)
+                if s_key not in signal_keys:
+                    signal_keys.add(s_key)
+                    signals.append(s)
+
+        if not assets and root_ip:
+            assets.append(Asset(ip=root_ip, port=443, hostname=clean_domain))
+            unique_ports.add(443)
+
+        return ScanResult(
+            domain=clean_domain,
+            scanner_type=self.scanner_type,
+            assets=assets,
+            signals=signals,
+            ips=list(unique_ips),
+            hostnames=discovered_hosts or ([clean_domain] if root_ip else []),
+            ports=list(unique_ports),
+            products=list(products),
+            cloud_providers=list(cloud_providers),
+            metadata={"engine": "standard_network_crawler"},
+        )
+
+    def scan(
+        self,
+        domain: str,
+        options: Optional[ScannerEngineOptions] = None,
+    ) -> ScanResult:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            import concurrent.futures
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                return pool.submit(asyncio.run, self.scan_async(domain, options)).result()
+        return asyncio.run(self.scan_async(domain, options))
+
+    def _resolve_ip(self, host: str) -> Optional[str]:
+        try:
+            return socket.gethostbyname(host)
+        except (socket.gaierror, socket.herror, Exception):
+            return None
+
+    def _check_port_open(self, ip: str, port: int) -> bool:
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(self.timeout)
+            res = sock.connect_ex((ip, port))
+            sock.close()
+            return res == 0
+        except Exception:
+            return False
+
+    def _probe_http_banner(self, host: str, port: int) -> Dict[str, Any]:
+        if port in (80, 443):
+            url = f"{'https' if port == 443 else 'http'}://{host}/"
+        else:
+            scheme = "https" if port in (443, 8443) else "http"
+            url = f"{scheme}://{host}:{port}/"
+
+        banner: Dict[str, Any] = {
+            "server": "",
+            "cloud_providers": [],
+            "technologies": [],
+            "status": None,
+        }
+
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) SalesIntelBot/2.0"),
+                "Accept": "*/*",
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout + 0.4, context=ctx) as response:
+                banner["status"] = response.status
+                headers = {k.lower(): v for k, v in response.headers.items()}
+                server_hdr = headers.get("server", "")
+                powered_by = headers.get("x-powered-by", "")
+
+                banner["server"] = server_hdr
+                if powered_by:
+                    banner["technologies"].append(powered_by)
+
+                all_headers_str = " ".join([f"{k}:{v}" for k, v in headers.items()]).lower()
+                for provider, sigs in CLOUD_SIGNATURES.items():
+                    if any(sig in all_headers_str for sig in sigs):
+                        banner["cloud_providers"].append(provider)
+
+                if "nginx" in server_hdr.lower():
+                    banner["technologies"].append("Nginx")
+                elif "apache" in server_hdr.lower():
+                    banner["technologies"].append("Apache HTTPD")
+                elif "envoy" in server_hdr.lower():
+                    banner["technologies"].append("Envoy Proxy")
+                elif "microsoft-iis" in server_hdr.lower():
+                    banner["technologies"].append("Microsoft-IIS")
+
+        except urllib.error.HTTPError as e:
+            banner["status"] = e.code
+            headers = {k.lower(): v for k, v in e.headers.items()}
+            server_hdr = headers.get("server", "")
+            banner["server"] = server_hdr
+            all_headers_str = " ".join([f"{k}:{v}" for k, v in headers.items()]).lower()
+            for provider, sigs in CLOUD_SIGNATURES.items():
+                if any(sig in all_headers_str for sig in sigs):
+                    banner["cloud_providers"].append(provider)
+        except Exception:
+            pass
+
+        return banner

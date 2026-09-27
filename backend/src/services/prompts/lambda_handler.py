@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
 
 from src.core.config import LOGFIRE_TOKEN
-from src.services.logger import UserJourneyMiddleware
+from src.services.logger.middleware import UserJourneyMiddleware
 from src.services.prompts.api import router as prompts_router
 
 app = FastAPI(

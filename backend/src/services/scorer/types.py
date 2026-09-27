@@ -1,8 +1,8 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional, Protocol, Union
+from typing import Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.services.accounts.types import Account
 
@@ -15,53 +15,90 @@ class PriorityTier(str, Enum):
 
 
 class AccountScore(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True)
+    model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True, extra="ignore")
 
     account_key: str
-    account: Union[Account, Dict[str, Any], Any]
-    score: int
+    account: Union[Account, Dict[str, Any], Any] = {}
+    score: int = 0
     score_rationale: Optional[str] = ""
-    priority_tier: PriorityTier
-    key_risks: List[str] = []
-    suggested_outreach: str = ""
-    model_version: str
-    model_name: Optional[str] = "gemini-3.1-flash-lite"
-    timestamp: datetime
-    tokens_used: dict = {}
-    latency_ms: int = 0
+    reasoning: Optional[str] = ""
+    priority_tier: PriorityTier = PriorityTier.TIER_3_MEDIUM
+    model: str = "gemini-2.5-flash"
+    prompt_version: str = "v1.0"
+    scoring_time_ms: int = 0
     cost_usd: float = 0.0
+    input_tokens: Optional[int] = 0
+    output_tokens: Optional[int] = 0
+    total_tokens: Optional[int] = 0
+    calculated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    outreach_strategy: Optional[str] = None
+    first_party_intel: Optional[Dict[str, Any]] = None
+    security_posture_score: Optional[int] = None
+    business_impact_score: Optional[int] = None
+    compliance_risk_score: Optional[int] = None
+
+    # Compat fields for legacy repository records and tests
     version: Optional[int] = None
+    model_version: Optional[str] = None
+    key_risks: Optional[List[str]] = None
+    suggested_outreach: Optional[str] = None
+    timestamp: Optional[datetime] = None
+    tokens_used: Optional[Dict[str, int]] = None
+    latency_ms: Optional[int] = None
 
 
 class LLMTrace(BaseModel):
-    id: str
-    timestamp: datetime
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    trace_id: Optional[str] = None
+    id: Optional[str] = None
+    account_key: str
     model: str
     prompt_version: str
-    account_key: str
-    request_tokens: int
-    response_tokens: int
-    total_tokens: int
-    latency_ms: int
-    cost_usd: float
-    score: int
-    priority_tier: str
-    key_risks: List[str] = []
-    suggested_outreach: str = ""
+    input_tokens: Optional[int] = 0
+    output_tokens: Optional[int] = 0
+    request_tokens: Optional[int] = 0
+    response_tokens: Optional[int] = 0
+    total_tokens: int = 0
+    cost_usd: float = 0.0
+    latency_ms: int = 0
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    error: Optional[str] = None
+    score: Optional[int] = None
+    priority_tier: Optional[str] = None
+    key_risks: Optional[List[str]] = None
+    suggested_outreach: Optional[str] = None
 
 
-class ScoringRequest(BaseModel):
-    account_key: Optional[str] = None
-    account: Optional[Account] = None
+class ScoreAccountCommand(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    account: Union[Account, Dict[str, Any], Any]
+    prompt_version: Optional[str] = None
+    custom_prompt_template: Optional[str] = None
+    save_to_db: bool = True
+
+
+class BatchScoreCommand(BaseModel):
+    account_keys: List[str]
+    limit: int = 10
     prompt_version: Optional[str] = None
 
 
+class ScoringRequest(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    account: Union[Account, Dict[str, Any], Any]
+    use_cot: bool = True
+    account_key: Optional[str] = None
+
+
 class ScoringResponse(BaseModel):
-    score: int
-    priority_tier: PriorityTier
-    key_risks: List[str]
-    suggested_outreach: str
-    score_rationale: str
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    success: bool
+    score: Optional[AccountScore] = None
+    error: Optional[str] = None
 
 
 class LLMStats(BaseModel):
@@ -72,53 +109,4 @@ class LLMStats(BaseModel):
     trace_file: Optional[str] = None
 
 
-class IScoreReader(Protocol):
-    """Score data reader contract."""
 
-    def get_latest_score(
-        self, conn: Any, account_key: str, version: Optional[str] = None
-    ) -> Optional[dict]: ...
-
-    def get_score_history(
-        self, conn: Any, account_key: str, version: Optional[str] = None
-    ) -> List[dict]: ...
-
-
-class IScoreWriter(Protocol):
-    """Score data writer contract."""
-
-    def save_score(self, conn: Any, score: AccountScore) -> dict: ...
-
-
-class IScorerService(Protocol):
-    """Scorer business service contract."""
-
-    def calculate_cost(self, input_tokens: int, output_tokens: int) -> float: ...
-
-    def format_account_context(self, account: Account) -> str: ...
-
-    def get_prompt(
-        self,
-        account: Account,
-        prompt_version: Optional[str] = None,
-        custom_prompt_template: Optional[str] = None,
-    ) -> str: ...
-
-    def score_account(
-        self,
-        account: Account,
-        prompt_version: Optional[str] = None,
-        custom_prompt_template: Optional[str] = None,
-    ) -> AccountScore: ...
-
-    def score_batch(self, account_keys: List[str], limit: int = 10) -> List[AccountScore]: ...
-
-    def get_latest_score_for_account(self, account_key: str, version: Optional[str] = None) -> Optional[dict]: ...
-
-    def get_score_history_for_account(self, account_key: str, version: Optional[str] = None) -> List[dict]: ...
-
-    def log_trace(self, trace: LLMTrace) -> None: ...
-
-    def get_traces(self) -> List[LLMTrace]: ...
-
-    def get_summary(self) -> Dict[str, Any]: ...

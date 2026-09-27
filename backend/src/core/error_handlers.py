@@ -7,7 +7,8 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from src.core.exceptions import AppException
-from src.services.logger import get_current_trace_id, get_logger
+from src.services.logger.context import get_current_trace_id
+from src.services.logger.logger_service import get_logger
 
 logger = get_logger("error_boundary")
 

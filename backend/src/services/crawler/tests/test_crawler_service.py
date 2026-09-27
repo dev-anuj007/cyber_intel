@@ -1,5 +1,4 @@
-"""Comprehensive Pytest Test Suite for Crawler Service, Scanners, Repositories, and API."""
-
+import asyncio
 from unittest.mock import patch
 
 import pytest
@@ -8,13 +7,22 @@ from fastapi.testclient import TestClient
 
 from src.services.crawler.api import get_crawler_service, router
 from src.services.crawler.crawler_service import CrawlerService
-from src.services.crawler.repositories.jobs_repository import CrawlerJobsRepository
-from src.services.crawler.scanners.cisa_kev_scanner import CisaKevScanner
-from src.services.crawler.scanners.factory import ScannerFactory
-from src.services.crawler.scanners.owasp_zap_scanner import OwaspZapScanner
-from src.services.crawler.scanners.projectdiscovery_scanner import ProjectDiscoveryScanner
-from src.services.crawler.scanners.standard_scanner import StandardCrawlerScanner
+from src.services.crawler.dependencies import get_crawler_dependency_context
+from src.services.crawler.internals.scanners.cisa_kev_scanner import CisaKevScanner
+from src.services.crawler.internals.scanners.factory import ScannerFactory
+from src.services.crawler.internals.scanners.owasp_zap_scanner import OwaspZapScanner
+from src.services.crawler.internals.scanners.projectdiscovery_scanner import (
+    ProjectDiscoveryScanner,
+)
+from src.services.crawler.internals.scanners.standard_scanner import (
+    StandardCrawlerScanner,
+)
+from src.services.crawler.types import (
+    CrawlerRunRequest,
+    CrawlerScanRequest,
+)
 from src.services.database.database_service import DatabaseService
+from src.services.jobs.dependencies import create_jobs_service, get_jobs_service
 
 
 @pytest.fixture
@@ -27,15 +35,19 @@ def test_db(tmp_path):
 
 @pytest.fixture
 def crawler_service(test_db):
-    repo = CrawlerJobsRepository(db_path=test_db)
-    return CrawlerService(jobs_repo=repo, db_path=test_db)
+    ctx = get_crawler_dependency_context(db_path=test_db)
+    return CrawlerService(context=ctx)
+
+
+@pytest.fixture
+def jobs_service(test_db):
+    return create_jobs_service(db_path=test_db)
 
 
 def test_scanner_factory():
     scanners = ScannerFactory.list_available_scanners()
     assert len(scanners) >= 4
 
-    # Get scanner instances
     s1 = ScannerFactory.get_scanner("standard")
     assert isinstance(s1, StandardCrawlerScanner)
 
@@ -92,67 +104,52 @@ def test_scanner_factory_run_scan():
         assert result.domain == "allscanners.com"
 
 
-def test_crawler_service_and_jobs_repo(crawler_service, test_db):
-    # Test scan
-    with patch("socket.gethostbyname", return_value="1.2.3.4"):
-        result = crawler_service.scan_domain("scanme.org", scanner_type="standard")
+def test_async_scanner_factory_and_scanners():
+    with patch("socket.gethostbyname", return_value="8.8.8.8"):
+        result = asyncio.run(ScannerFactory.run_scan_async("allscanners.com", scanner_type="all"))
         assert result is not None
-
-    # Test jobs repository
-    repo = CrawlerJobsRepository(db_path=test_db)
-    job_id = repo.create_job("scanme.org", "standard")
-    assert job_id is not None
-
-    job = repo.get_job(job_id)
-    assert job is not None
-    assert job["domain"] == "scanme.org"
-    assert job["status"] == "pending"
-
-    # Update progress & status
-    repo.update_job_status(job_id, "running", progress=50)
-    job = repo.get_job(job_id)
-    assert job is not None
-    assert job["status"] == "running"
-    assert job["progress"] == 50
-
-    # Complete job
-    repo.complete_job(job_id, results_summary={"signals": 5, "assets": 2})
-    job = repo.get_job(job_id)
-    assert job is not None
-    assert job["status"] == "completed"
-    assert job["progress"] == 100
-
-    # Fail job
-    fail_job_id = repo.create_job("faildomain.com", "standard")
-    repo.fail_job(fail_job_id, "Network timeout")
-    job_fail = repo.get_job(fail_job_id)
-    assert job_fail is not None
-    assert job_fail["status"] == "failed"
-    assert "timeout" in (job_fail.get("error_message") or "")
-
-    # List jobs
-    jobs = repo.list_jobs(limit=10)
-    assert len(jobs) >= 2
+        assert result.domain == "allscanners.com"
 
 
-def test_crawler_api_endpoints(crawler_service):
+def test_crawler_service_scan_domain(crawler_service):
+    with patch("socket.gethostbyname", return_value="1.2.3.4"):
+        result = crawler_service.scan_domain(CrawlerScanRequest(domain="scanme.org", scanner_type="standard"))
+        assert result is not None
+        assert result.domain == "scanme.org"
+
+
+def test_crawler_api_endpoints(crawler_service, jobs_service):
     api_app = FastAPI()
     api_app.include_router(router)
     api_app.dependency_overrides[get_crawler_service] = lambda: crawler_service
+    api_app.dependency_overrides[get_jobs_service] = lambda: jobs_service
     client = TestClient(api_app)
 
-    # List scanners
     r = client.get("/api/crawler/scanners")
     assert r.status_code == 200
     scanners = r.json().get("scanners", r.json()) if isinstance(r.json(), dict) else r.json()
     assert len(scanners) >= 4
 
-    # Trigger scan
     with patch("socket.gethostbyname", return_value="1.2.3.4"):
         r = client.post("/api/crawler/scan", json={"domain": "apicrawl.com", "scanner_type": "standard"})
-        assert r.status_code in [200, 422]
+        assert r.status_code == 200
+        data = r.json()
+        assert data["success"] is True
+        assert data["domain"] == "apicrawl.com"
 
-    # List jobs
+    r = client.post(
+        "/api/crawler/jobs",
+        json={
+            "domains": ["apicrawl.com"],
+            "pipeline_name": "Test Crawl Pipeline",
+            "scanner_type": "standard",
+        },
+    )
+    assert r.status_code == 202
+    job_info = r.json()
+    assert job_info["success"] is True
+    assert "job_id" in job_info
+
     r = client.get("/api/crawler/jobs")
     assert r.status_code == 200
 
@@ -161,17 +158,19 @@ def test_crawler_api_endpoints(crawler_service):
 
 def test_crawler_invalid_domain_raises_error(crawler_service):
     with pytest.raises(ValueError, match="could not be resolved via DNS or does not exist"):
-        crawler_service.crawl_domain("hjhjkjhkjhkhk.com")
+        crawler_service.crawl_domain(CrawlerScanRequest(domain="hjhjkjhkjhkhk.com"))
 
 
 def test_crawler_job_handles_invalid_domain_cleanly(crawler_service):
     progress_calls = []
     res = crawler_service.handle_crawler_job_scan(
         job_id="job-test-invalid",
-        payload={"domains": ["invalid-fake-domain-12345.xyz"], "scanner_type": "all", "save_to_database": False},
+        request=CrawlerRunRequest(
+            domains=["invalid-fake-domain-12345.xyz"], scanner_type="all", save_to_database=False
+        ),
         progress_cb=lambda cur, tot, metadata=None, partial_results=None: progress_calls.append(cur),
     )
-    assert len(res["results"]) == 1
-    assert res["results"][0]["assets_count"] == 0
-    assert res["results"][0]["signals_detected_count"] == 0
-    assert "could not be resolved" in res["results"][0]["error"]
+    assert len(res.results) == 1
+    assert res.results[0]["assets_count"] == 0
+    assert res.results[0]["signals_detected_count"] == 0
+    assert "could not be resolved" in res.results[0]["error"]

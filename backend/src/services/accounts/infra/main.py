@@ -1,7 +1,7 @@
 import pulumi
 import pulumi_aws as aws
 
-from src.services.infra import ServiceInfraContext, ServiceInfraOutput
+from src.services.infra.types import ServiceInfraContext, ServiceInfraOutput
 
 
 def provision_service_infra(ctx: ServiceInfraContext) -> ServiceInfraOutput:
@@ -15,12 +15,18 @@ def provision_service_infra(ctx: ServiceInfraContext) -> ServiceInfraOutput:
         role=ctx.lambda_role_arn,
         package_type="Image",
         image_uri=ctx.get_image_uri(service_name),
-        image_config=aws.lambda_.FunctionImageConfigArgs(commands=["src.services.accounts.lambda_handler.handler"]),
+        image_config=aws.lambda_.FunctionImageConfigArgs(
+            commands=["src.services.accounts.lambda_handler.handler"]
+        ),
         memory_size=2048,
         timeout=60,
         ephemeral_storage=aws.lambda_.FunctionEphemeralStorageArgs(size=4096),
         environment=aws.lambda_.FunctionEnvironmentArgs(variables=ctx.common_env_vars),
-        tags={"Environment": ctx.environment, "App": ctx.app_name, "Service": service_name},
+        tags={
+            "Environment": ctx.environment,
+            "App": ctx.app_name,
+            "Service": service_name,
+        },
     )
 
     # 2. Dedicated API Gateway Integration
@@ -38,7 +44,9 @@ def provision_service_infra(ctx: ServiceInfraContext) -> ServiceInfraOutput:
         action="lambda:InvokeFunction",
         function=accounts_lambda.name,
         principal="apigateway.amazonaws.com",
-        source_arn=pulumi.Output.all(ctx.http_api_execution_arn).apply(lambda args: f"{args[0]}/*/*"),
+        source_arn=pulumi.Output.all(ctx.http_api_execution_arn).apply(
+            lambda args: f"{args[0]}/*/*"
+        ),
     )
 
     # 4. Dedicated Accounts API Gateway Routes
@@ -54,7 +62,13 @@ def provision_service_infra(ctx: ServiceInfraContext) -> ServiceInfraOutput:
 
     routes = []
     for idx, r_key in enumerate(route_keys):
-        clean_key = r_key.replace(" ", "-").replace("/", "-").replace("{", "").replace("}", "").replace("+", "")
+        clean_key = (
+            r_key.replace(" ", "-")
+            .replace("/", "-")
+            .replace("{", "")
+            .replace("}", "")
+            .replace("+", "")
+        )
         route = aws.apigatewayv2.Route(
             f"{name_prefix}-route-{idx}-{clean_key}",
             api_id=ctx.http_api_id,

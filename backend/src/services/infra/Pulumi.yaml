@@ -3,4 +3,5 @@ runtime:
   name: python
   options:
     virtualenv: ../../../.venv
+main: infra_service.py
 description: Pulumi Python IaC for Sales Intelligence Platform on AWS Serverless (Lambda Microservices + S3 DB + API Gateway + Frontend Website)

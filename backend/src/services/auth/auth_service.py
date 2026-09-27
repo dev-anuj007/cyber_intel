@@ -3,8 +3,17 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from src.services.auth.repositories.reader import UserReader
-from src.services.auth.repositories.writer import UserWriter
+from src.services.auth.dependencies import (
+    AuthServiceDependencyContext,
+    get_auth_dependency_context,
+)
+from src.services.auth.internals.repositories.reader import UserReader
+from src.services.auth.internals.repositories.writer import UserWriter
+from src.services.auth.protocols import (
+    IAuthService,
+    IUserReader,
+    IUserWriter,
+)
 from src.services.auth.security import (
     create_access_token,
     decode_access_token,
@@ -13,16 +22,15 @@ from src.services.auth.security import (
 )
 from src.services.auth.types import (
     AuthResponse,
-    IAuthService,
-    IUserReader,
-    IUserWriter,
+    SigninCommand,
+    SignupCommand,
     UserResponse,
     UserSigninRequest,
     UserSignupRequest,
 )
-from src.services.database import default_database_service
+from src.services.database.dependencies import default_database_service
 from src.services.database.database_service import DatabaseService
-from src.services.logger import get_logger
+from src.services.logger.logger_service import get_logger
 
 logger = get_logger("services.auth")
 
@@ -30,17 +38,16 @@ logger = get_logger("services.auth")
 class AuthService(IAuthService):
     def __init__(
         self,
-        db_path: Optional[Union[Path, str]] = None,
-        reader: Optional[IUserReader] = None,
-        writer: Optional[IUserWriter] = None,
-        jwt_secret: Optional[str] = None,
-        **kwargs,
+        context: Optional[AuthServiceDependencyContext] = None,
     ):
-        self.db_path = Path(db_path) if isinstance(db_path, str) else db_path
+        ctx = context or get_auth_dependency_context()
+        self._reader: IUserReader = ctx.reader
+        self._writer: IUserWriter = ctx.writer
+        self.reader = self._reader
+        self.writer = self._writer
+        self.jwt_secret = ctx.jwt_secret
+        self.db_path = Path(ctx.db_path) if isinstance(ctx.db_path, str) else ctx.db_path
         self._local_db_service = DatabaseService(db_path=self.db_path) if self.db_path is not None else None
-        self.jwt_secret = jwt_secret
-        self.reader = reader or UserReader()
-        self.writer = writer or UserWriter()
 
     @contextmanager
     def _connection(self):
@@ -69,12 +76,12 @@ class AuthService(IAuthService):
 
     def signup(
         self,
-        req: Optional[UserSignupRequest] = None,
+        req: Optional[Union[UserSignupRequest, SignupCommand]] = None,
         email: Optional[str] = None,
         password: Optional[str] = None,
         full_name: Optional[str] = None,
         role: Optional[str] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> AuthResponse:
         if req is not None:
             email = req.email
@@ -91,13 +98,13 @@ class AuthService(IAuthService):
 
         with logger.span("auth.signup", email=email):
             with self._connection() as conn:
-                existing = self.reader.get_user_by_email(conn, email)
+                existing = self._reader.get_user_by_email(conn, email)
                 if existing:
                     logger.warning("Signup rejected: user already exists", email=email)
                     raise ValueError("An account with this email address already exists")
 
                 pwd_hash, salt = hash_password(password)
-                user_id = self.writer.create_user(
+                user_id = self._writer.create_user(
                     conn,
                     email=email,
                     password_hash=pwd_hash,
@@ -105,10 +112,10 @@ class AuthService(IAuthService):
                     full_name=full_name,
                     role=role,
                 )
-                if conn is not None:
+                if conn is not None and hasattr(conn, "commit"):
                     conn.commit()
 
-                user = self.reader.get_user_by_id(conn, user_id)
+                user = self._reader.get_user_by_id(conn, user_id)
                 if not user:
                     raise ValueError("Failed to retrieve created user")
 
@@ -118,10 +125,10 @@ class AuthService(IAuthService):
 
     def signin(
         self,
-        req: Optional[UserSigninRequest] = None,
+        req: Optional[Union[UserSigninRequest, SigninCommand]] = None,
         email: Optional[str] = None,
         password: Optional[str] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> AuthResponse:
         if req is not None:
             email = req.email
@@ -132,7 +139,7 @@ class AuthService(IAuthService):
 
         with logger.span("auth.signin", email=email):
             with self._connection() as conn:
-                user = self.reader.get_user_by_email(conn, email)
+                user = self._reader.get_user_by_email(conn, email)
                 if not user or not verify_password(password, user.get("salt", ""), user.get("password_hash", "")):
                     logger.warning("Signin failed: invalid credentials", email=email)
                     raise PermissionError("Invalid email or password")
@@ -149,27 +156,27 @@ class AuthService(IAuthService):
 
     def get_user_by_id(self, user_id: Any) -> Optional[dict]:
         with self._connection() as conn:
-            return self.reader.get_user_by_id(conn, user_id)
+            return self._reader.get_user_by_id(conn, user_id)
 
     def get_user_by_email(self, email: str) -> Optional[dict]:
         with self._connection() as conn:
-            return self.reader.get_user_by_email(conn, email)
+            return self._reader.get_user_by_email(conn, email)
 
     def create_api_key(self, user_id: Any) -> str:
         key = f"sk-{secrets.token_hex(16)}"
         with self._connection() as conn:
-            self.writer.update_api_key(conn, user_id, key)
-            if conn is not None:
+            self._writer.update_api_key(conn, user_id, key)
+            if conn is not None and hasattr(conn, "commit"):
                 conn.commit()
         return key
 
     def verify_api_key(self, api_key: str) -> Optional[dict]:
         with self._connection() as conn:
-            return self.reader.get_user_by_api_key(conn, api_key)
+            return self._reader.get_user_by_api_key(conn, api_key)
 
     def list_api_keys(self, user_id: Any) -> list:
         with self._connection() as conn:
-            u = self.reader.get_user_by_id(conn, user_id)
+            u = self._reader.get_user_by_id(conn, user_id)
             if u and (u.get("gemini_api_key") or u.get("api_key")):
                 k = u.get("gemini_api_key") or u.get("api_key")
                 return [{"api_key": k, "created_at": u.get("created_at")}]
@@ -177,8 +184,8 @@ class AuthService(IAuthService):
 
     def revoke_api_key(self, user_id: Any, api_key: Optional[str] = None) -> bool:
         with self._connection() as conn:
-            self.writer.delete_api_key(conn, user_id, api_key)
-            if conn is not None:
+            self._writer.delete_api_key(conn, user_id, api_key)
+            if conn is not None and hasattr(conn, "commit"):
                 conn.commit()
             return True
 
@@ -189,7 +196,7 @@ class AuthService(IAuthService):
         user_id = payload["sub"]
 
         with self._connection() as conn:
-            return self.reader.get_user_by_id(conn, user_id)
+            return self._reader.get_user_by_id(conn, user_id)
 
     def set_user_api_key(self, user_id: Any, api_key: str) -> UserResponse:
         clean_key = api_key.strip()
@@ -198,10 +205,10 @@ class AuthService(IAuthService):
 
         with logger.span("auth.set_api_key", user_id=str(user_id)):
             with self._connection() as conn:
-                self.writer.update_user_api_key(conn, user_id, clean_key)
-                if conn is not None:
+                self._writer.update_user_api_key(conn, user_id, clean_key)
+                if conn is not None and hasattr(conn, "commit"):
                     conn.commit()
-                updated = self.reader.get_user_by_id(conn, user_id)
+                updated = self._reader.get_user_by_id(conn, user_id)
                 if not updated:
                     raise LookupError("User not found")
                 logger.info("User API key configured", user_id=str(user_id))
@@ -210,10 +217,10 @@ class AuthService(IAuthService):
     def delete_user_api_key(self, user_id: Any) -> UserResponse:
         with logger.span("auth.delete_api_key", user_id=str(user_id)):
             with self._connection() as conn:
-                self.writer.update_user_api_key(conn, user_id, None)
-                if conn is not None:
+                self._writer.update_user_api_key(conn, user_id, None)
+                if conn is not None and hasattr(conn, "commit"):
                     conn.commit()
-                updated = self.reader.get_user_by_id(conn, user_id)
+                updated = self._reader.get_user_by_id(conn, user_id)
                 if not updated:
                     raise LookupError("User not found")
                 logger.info("User API key cleared", user_id=str(user_id))

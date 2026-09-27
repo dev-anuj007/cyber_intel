@@ -1,17 +1,13 @@
-"""Accounts Microservice AWS Lambda Handler.
-
-Wraps the Accounts sub-application using Mangum for AWS Lambda execution.
-"""
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
 
 from src.core.config import LOGFIRE_TOKEN
 from src.core.error_handlers import register_error_handlers
-from src.services.accounts import default_accounts_service
 from src.services.accounts.api import router as accounts_router
-from src.services.logger import UserJourneyMiddleware, get_logger
+from src.services.accounts.dependencies import default_accounts_service
+from src.services.logger.logger_service import get_logger
+from src.services.logger.middleware import UserJourneyMiddleware
 
 logger = get_logger("services.accounts.lambda")
 

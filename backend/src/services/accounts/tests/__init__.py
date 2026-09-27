@@ -1,1 +1,1 @@
-"""Accounts service tests package."""
+

@@ -13,24 +13,29 @@ from google import genai
 from google.genai import types
 
 from src.core.config import (
-    DEFAULT_TRACE_DIR,
     GEMINI_MODEL,
     PRICING,
     PROMPT_VERSION,
 )
 from src.services.accounts.types import Account
-from src.services.database import default_database_service
+from src.services.database.dependencies import default_database_service
 from src.services.database.database_service import DatabaseService
-from src.services.logger import get_logger
-from src.services.scorer.repositories.reader import ScoreReader
-from src.services.scorer.repositories.writer import ScoreWriter
-from src.services.scorer.types import (
-    AccountScore,
+from src.services.logger.logger_service import get_logger
+from src.services.scorer.dependencies import (
+    ScorerServiceDependencyContext,
+    get_scorer_dependency_context,
+)
+from src.services.scorer.protocols import (
     IScoreReader,
     IScorerService,
     IScoreWriter,
+)
+from src.services.scorer.types import (
+    AccountScore,
+    BatchScoreCommand,
     LLMTrace,
     PriorityTier,
+    ScoreAccountCommand,
     ScoringResponse,
 )
 
@@ -60,26 +65,24 @@ _global_rate_limiter = GlobalRateLimiter(min_interval=0.05)
 class ScorerService(IScorerService):
     def __init__(
         self,
-        db_path: Optional[Union[Path, str]] = None,
-        reader: Optional[IScoreReader] = None,
-        writer: Optional[IScoreWriter] = None,
-        accounts_service: Optional[Any] = None,
-        trace_dir: Optional[Union[str, Path]] = None,
-        api_key: Optional[str] = None,
-        prompt_version: Optional[str] = None,
-        model: Optional[str] = None,
+        context: Optional[ScorerServiceDependencyContext] = None,
     ):
-        self.db_path = Path(db_path) if isinstance(db_path, str) else db_path
-        self._local_db_service = DatabaseService(db_path=self.db_path) if self.db_path is not None else None
-        self.reader = reader or ScoreReader()
-        self.writer = writer or ScoreWriter()
-        self._accounts_service = accounts_service
+        ctx = context or get_scorer_dependency_context()
+        self._reader: IScoreReader = ctx.reader
+        self._writer: IScoreWriter = ctx.writer
+        self.reader = self._reader
+        self.writer = self._writer
+        self._accounts_service = ctx.accounts_service
+        self._prompt_service = ctx.prompt_service
 
-        self.api_key = api_key
-        self.client = genai.Client(api_key=api_key) if api_key else None
-        self.prompt_version = prompt_version or PROMPT_VERSION
-        self.model = model or GEMINI_MODEL
-        self.trace_dir = Path(trace_dir) if trace_dir is not None else None
+        self.db_path = Path(ctx.db_path) if isinstance(ctx.db_path, str) else ctx.db_path
+        self._local_db_service = DatabaseService(db_path=self.db_path) if self.db_path is not None else None
+
+        self.api_key = ctx.api_key
+        self.client = genai.Client(api_key=ctx.api_key) if ctx.api_key else None
+        self.prompt_version = ctx.prompt_version or PROMPT_VERSION
+        self.model = ctx.model or GEMINI_MODEL
+        self.trace_dir = Path(ctx.trace_dir) if ctx.trace_dir is not None else None
         self.trace_file = (self.trace_dir / f"llm-traces-{int(time.time())}.jsonl") if self.trace_dir else None
         self.traces: List[LLMTrace] = []
 
@@ -134,26 +137,40 @@ class ScorerService(IScorerService):
 
         return crit_text, high_text, all_signals_sample_text
 
-    def format_account_context(self, account: Account) -> str:
-        critical_signals = [s for s in account.signals if (getattr(s.severity, "value", s.severity) == "critical")]
-        high_signals = [s for s in account.signals if (getattr(s.severity, "value", s.severity) == "high")]
-        medium_signals = [s for s in account.signals if (getattr(s.severity, "value", s.severity) == "medium")]
-        low_signals = [s for s in account.signals if (getattr(s.severity, "value", s.severity) == "low")]
+    def format_account_context(self, account: Union[Account, Dict[str, Any], Any]) -> str:
+        signals = getattr(account, "signals", None) if not isinstance(account, dict) else account.get("signals")
+        signals = signals or []
+        critical_signals = [s for s in signals if (getattr(s.severity, "value", getattr(s, "severity", "")) == "critical" or (isinstance(s, dict) and s.get("severity") == "critical"))]
+        high_signals = [s for s in signals if (getattr(s.severity, "value", getattr(s, "severity", "")) == "high" or (isinstance(s, dict) and s.get("severity") == "high"))]
+        medium_signals = [s for s in signals if (getattr(s.severity, "value", getattr(s, "severity", "")) == "medium" or (isinstance(s, dict) and s.get("severity") == "medium"))]
+        low_signals = [s for s in signals if (getattr(s.severity, "value", getattr(s, "severity", "")) == "low" or (isinstance(s, dict) and s.get("severity") == "low"))]
 
         crit_text, high_text, sample_text = self._format_signal_evidence_summary(
-            critical_signals, high_signals, medium_signals, low_signals, len(account.signals)
+            critical_signals, high_signals, medium_signals, low_signals, len(signals)
         )
 
+        domains = getattr(account, "domains", None) if not isinstance(account, dict) else account.get("domains")
+        domains = domains or []
+        assets = getattr(account, "assets", None) if not isinstance(account, dict) else account.get("assets")
+        assets = assets or []
+        ips = getattr(account, "ips", None) if not isinstance(account, dict) else account.get("ips")
+        ips = ips or []
+        products = getattr(account, "products", None) if not isinstance(account, dict) else account.get("products")
+        products = products or []
+        cloud_providers = getattr(account, "cloud_providers", None) if not isinstance(account, dict) else account.get("cloud_providers")
+        cloud_providers = cloud_providers or []
+        account_key = getattr(account, "account_key", None) or (account.get("account_key") if isinstance(account, dict) else str(account))
+
         return textwrap.dedent(f"""
-        Account: {account.account_key}
-        Domains: {", ".join(account.domains[:20])}
-        Assets discovered: {len(account.assets)}
-        Unique IPs: {len(account.ips)}
-        Technology stack: {", ".join(account.products[:30]) or "Unknown"}
-        Cloud providers: {", ".join(account.cloud_providers) or "None detected"}
+        Account: {account_key}
+        Domains: {", ".join(domains[:20])}
+        Assets discovered: {len(assets)}
+        Unique IPs: {len(ips)}
+        Technology stack: {", ".join(products[:30]) or "Unknown"}
+        Cloud providers: {", ".join(cloud_providers) or "None detected"}
 
         SECURITY SIGNALS SUMMARY:
-        Total Signals: {len(account.signals)} (Critical: {len(critical_signals)}, High: {len(high_signals)}, Medium: {len(medium_signals)}, Low: {len(low_signals)})
+        Total Signals: {len(signals)} (Critical: {len(critical_signals)}, High: {len(high_signals)}, Medium: {len(medium_signals)}, Low: {len(low_signals)})
 
         Critical ({len(critical_signals)}):
         {crit_text}
@@ -167,7 +184,7 @@ class ScorerService(IScorerService):
 
     def get_prompt(
         self,
-        account: Account,
+        account: Union[Account, Dict[str, Any], Any],
         prompt_version: Optional[str] = None,
         custom_prompt_template: Optional[str] = None,
     ) -> str:
@@ -178,10 +195,14 @@ class ScorerService(IScorerService):
                 return custom_prompt_template.replace("{account_context}", context)
             return f"{custom_prompt_template}\n\n{context}"
 
-        from src.services.prompts import default_prompt_service
+        if self._prompt_service:
+            template = self._prompt_service.get_template(prompt_version or self.prompt_version)
+        else:
+            from src.services.prompts.dependencies import default_prompt_service
 
-        version = prompt_version or self.prompt_version
-        template = default_prompt_service.get_template(version)
+            version = prompt_version or self.prompt_version
+            template = default_prompt_service.get_template(version)
+
         if "{account_context}" in template:
             return template.replace("{account_context}", context)
         return f"{template}\n\n{context}"
@@ -252,7 +273,7 @@ class ScorerService(IScorerService):
         cost_usd = self.calculate_cost(input_tokens, output_tokens)
         return input_tokens, output_tokens, total_tokens, cost_usd
 
-    def _apply_score_guardrails(self, result: Dict[str, Any], account: Account) -> Tuple[int, PriorityTier, str]:
+    def _apply_score_guardrails(self, result: Dict[str, Any], account: Union[Account, Dict[str, Any], Any]) -> Tuple[int, PriorityTier, str]:
         try:
             raw_score = int(result.get("score", 50))
         except (ValueError, TypeError):
@@ -260,14 +281,24 @@ class ScorerService(IScorerService):
         raw_score = max(1, min(100, raw_score))
         original_score = raw_score
 
+        acc_key = (
+            getattr(account, "account_key", None)
+            or (account.get("account_key") if isinstance(account, dict) else str(account))
+        )
+        signals = getattr(account, "signals", None) if not isinstance(account, dict) else account.get("signals")
+        signals = signals or []
         critical_signals_count = len(
-            [s for s in account.signals if (getattr(s.severity, "value", s.severity) == "critical")]
+            [s for s in signals if (getattr(s.severity, "value", getattr(s, "severity", "")) == "critical" or (isinstance(s, dict) and s.get("severity") == "critical"))]
         )
-        high_signals_count = len([s for s in account.signals if (getattr(s.severity, "value", s.severity) == "high")])
+        high_signals_count = len(
+            [s for s in signals if (getattr(s.severity, "value", getattr(s, "severity", "")) == "high" or (isinstance(s, dict) and s.get("severity") == "high"))]
+        )
         medium_signals_count = len(
-            [s for s in account.signals if (getattr(s.severity, "value", s.severity) == "medium")]
+            [s for s in signals if (getattr(s.severity, "value", getattr(s, "severity", "")) == "medium" or (isinstance(s, dict) and s.get("severity") == "medium"))]
         )
-        low_signals_count = len([s for s in account.signals if (getattr(s.severity, "value", s.severity) == "low")])
+        low_signals_count = len(
+            [s for s in signals if (getattr(s.severity, "value", getattr(s, "severity", "")) == "low" or (isinstance(s, dict) and s.get("severity") == "low"))]
+        )
 
         if critical_signals_count == 0:
             if raw_score >= 90:
@@ -283,7 +314,7 @@ class ScorerService(IScorerService):
                     raw_score = 20
                 logger.warning(
                     "Clamped hallucinated score to verified signal ceiling",
-                    account_key=account.account_key,
+                    account_key=acc_key,
                     original_score=original_score,
                     clamped_score=raw_score,
                 )
@@ -293,7 +324,7 @@ class ScorerService(IScorerService):
                 raw_score = 30 if low_signals_count > 0 else 18
                 logger.warning(
                     "Clamped low-signal account score to low/medium ceiling",
-                    account_key=account.account_key,
+                    account_key=acc_key,
                     clamped_score=raw_score,
                 )
 
@@ -314,32 +345,47 @@ class ScorerService(IScorerService):
         return raw_score, priority_tier, rationale
 
     def _persist_account_score(self, score: AccountScore) -> None:
-        with (self._local_db_service if self._local_db_service is not None else default_database_service).get_connection() as conn:
-            saved = self.writer.save_score(conn, score)
-            conn.commit()
+        with (
+            self._local_db_service if self._local_db_service is not None else default_database_service
+        ).get_connection() as conn:
+            saved = self._writer.save_score(conn, score)
+            if conn is not None and hasattr(conn, "commit"):
+                conn.commit()
             score.version = saved.get("version")
 
     def score_account(
         self,
-        account: Account,
+        account: Union[Account, Dict[str, Any], ScoreAccountCommand, Any],
         prompt_version: Optional[str] = None,
         custom_prompt_template: Optional[str] = None,
         save_to_db: bool = True,
     ) -> AccountScore:
+        if isinstance(account, ScoreAccountCommand):
+            target_account = account.account
+            target_version = account.prompt_version or prompt_version
+            target_custom_template = account.custom_prompt_template or custom_prompt_template
+            target_save_to_db = account.save_to_db
+        else:
+            target_account = account
+            target_version = prompt_version
+            target_custom_template = custom_prompt_template
+            target_save_to_db = save_to_db
+
         client = self._get_gemini_client()
         if not client:
             raise ValueError(
                 "Gemini API key is required for AI scoring. Please log in and set up your API key in your Profile settings."
             )
 
-        version = prompt_version or self.prompt_version
+        version = target_version or self.prompt_version
+        account_key = getattr(target_account, "account_key", str(target_account))
 
-        with logger.span("scorer.inference", account_key=account.account_key, model=self.model, version=version):
+        with logger.span("scorer.inference", account_key=account_key, model=self.model, version=version):
             start_time = time.time()
             prompt = self.get_prompt(
-                account,
+                target_account,
                 prompt_version=version,
-                custom_prompt_template=custom_prompt_template,
+                custom_prompt_template=target_custom_template,
             )
 
             try:
@@ -349,11 +395,11 @@ class ScorerService(IScorerService):
                 input_tokens, output_tokens, total_tokens, cost_usd = self._extract_token_usage_and_cost(response)
                 content = (response.text if response else "") or "{}"
                 result = self._parse_scoring_json(content)
-                final_score, priority_tier, rationale = self._apply_score_guardrails(result, account)
+                final_score, priority_tier, rationale = self._apply_score_guardrails(result, target_account)
 
                 score = AccountScore(
-                    account_key=account.account_key,
-                    account=account,
+                    account_key=account_key,
+                    account=target_account,
                     score=final_score,
                     score_rationale=rationale,
                     priority_tier=priority_tier,
@@ -366,16 +412,16 @@ class ScorerService(IScorerService):
                     cost_usd=cost_usd,
                 )
 
-                if save_to_db:
+                if target_save_to_db:
                     self._persist_account_score(score)
 
                 self.log_trace(
                     LLMTrace(
-                        id=f"trace-{int(time.time() * 1000)}-{hash(account.account_key) % 10000}",
+                        id=f"trace-{int(time.time() * 1000)}-{hash(account_key) % 10000}",
                         timestamp=datetime.now(),
                         model=self.model,
                         prompt_version=version,
-                        account_key=account.account_key,
+                        account_key=account_key,
                         request_tokens=input_tokens,
                         response_tokens=output_tokens,
                         total_tokens=total_tokens,
@@ -390,7 +436,7 @@ class ScorerService(IScorerService):
 
                 logger.info(
                     "Account scored successfully",
-                    account_key=account.account_key,
+                    account_key=account_key,
                     score=score.score,
                     priority_tier=score.priority_tier.value,
                     latency_ms=latency_ms,
@@ -400,33 +446,49 @@ class ScorerService(IScorerService):
                 return score
 
             except Exception as e:
-                logger.error("Error during scoring", account_key=account.account_key, error=str(e))
+                logger.error("Error during scoring", account_key=account_key, error=str(e))
                 raise
 
-    def score_batch(self, account_keys: List[str], limit: int = 10) -> List[AccountScore]:
+    def score_batch(
+        self,
+        account_keys: Union[List[str], BatchScoreCommand],
+        limit: int = 10,
+    ) -> List[AccountScore]:
+        if isinstance(account_keys, BatchScoreCommand):
+            target_keys = account_keys.account_keys
+            target_limit = account_keys.limit
+            prompt_version = account_keys.prompt_version
+        else:
+            target_keys = account_keys
+            target_limit = limit
+            prompt_version = None
+
         if not self._accounts_service:
-            from src.services.accounts.accounts_service import default_accounts_service
+            from src.services.accounts.dependencies import default_accounts_service
 
             self._accounts_service = default_accounts_service
 
-        target_keys = account_keys[:limit]
-        with logger.span("scorer.score_batch", count=len(target_keys)):
-            accounts = self._accounts_service.get_accounts_batch(target_keys)
+        sliced_keys = target_keys[:target_limit]
+        with logger.span("scorer.score_batch", count=len(sliced_keys)):
+            accounts = self._accounts_service.get_accounts_batch(sliced_keys)
             scores = []
             for account in accounts:
                 try:
-                    score = self.score_account(account)
+                    score = self.score_account(account, prompt_version=prompt_version)
                     scores.append(score)
                 except Exception as e:
-                    logger.error("Error scoring batch item", account_key=account.account_key, error=str(e))
+                    acc_key = getattr(account, "account_key", str(account))
+                    logger.error("Error scoring batch item", account_key=acc_key, error=str(e))
                     continue
-            logger.info("Batch scoring completed", scored_count=len(scores), total_requested=len(target_keys))
+            logger.info("Batch scoring completed", scored_count=len(scores), total_requested=len(sliced_keys))
             return scores
 
-    def save_score(self, score: AccountScore) -> dict:
-        with (self._local_db_service if self._local_db_service is not None else default_database_service).get_connection() as conn:
-            res = self.writer.save_score(conn, score)
-            if conn is not None:
+    def save_score(self, score: Union[AccountScore, dict]) -> dict:
+        with (
+            self._local_db_service if self._local_db_service is not None else default_database_service
+        ).get_connection() as conn:
+            res = self._writer.save_score(conn, score)
+            if conn is not None and hasattr(conn, "commit"):
                 conn.commit()
             return res
 
@@ -437,18 +499,22 @@ class ScorerService(IScorerService):
         return self.get_score_history_for_account(account_key)
 
     def get_latest_score_for_account(self, account_key: str, version: Optional[str] = None) -> Optional[dict]:
-        with (self._local_db_service if self._local_db_service is not None else default_database_service).get_connection() as conn:
-            return self.reader.get_latest_score(conn, account_key, version=version)
+        with (
+            self._local_db_service if self._local_db_service is not None else default_database_service
+        ).get_connection() as conn:
+            return self._reader.get_latest_score(conn, account_key, version=version)
 
     def get_score_history_for_account(self, account_key: str, version: Optional[str] = None) -> List[dict]:
-        with (self._local_db_service if self._local_db_service is not None else default_database_service).get_connection() as conn:
-            return self.reader.get_score_history(conn, account_key, version=version)
+        with (
+            self._local_db_service if self._local_db_service is not None else default_database_service
+        ).get_connection() as conn:
+            return self._reader.get_score_history(conn, account_key, version=version)
 
     def log_trace(self, trace: LLMTrace) -> None:
         self.traces.append(trace)
         logger.info(
             "llm.trace",
-            trace_id=trace.id,
+            trace_id=trace.id or trace.trace_id,
             account_key=trace.account_key,
             model=trace.model,
             prompt_version=trace.prompt_version,

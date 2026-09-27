@@ -1,18 +1,13 @@
-"""Crawler Microservice AWS Lambda Handler.
-
-Wraps the Crawler sub-application using Mangum for AWS Lambda execution.
-"""
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
 
 from src.core.config import LOGFIRE_TOKEN
 from src.core.error_handlers import register_error_handlers
-from src.services.accounts import default_accounts_service
-from src.services.crawler import default_crawler_service
 from src.services.crawler.api import router as crawler_router
-from src.services.logger import UserJourneyMiddleware, get_logger
+from src.services.jobs.dependencies import get_jobs_service
+from src.services.logger.logger_service import get_logger
+from src.services.logger.middleware import UserJourneyMiddleware
 
 logger = get_logger("services.crawler.lambda")
 
@@ -41,7 +36,6 @@ if LOGFIRE_TOKEN:
     except Exception:
         pass
 
-default_crawler_service.set_accounts_service(default_accounts_service)
 app.include_router(crawler_router)
 
 
@@ -49,8 +43,6 @@ app.include_router(crawler_router)
 def health():
     return {"status": "ok", "service": "crawler-microservice"}
 
-
-from src.services.jobs import default_jobs_service
 
 _mangum_handler = Mangum(app, lifespan="off")
 
@@ -60,6 +52,6 @@ def handler(event, context):
         job_id = event.get("job_id")
         if job_id:
             logger.info(f"Executing background crawler job {job_id} via async Lambda event", job_id=str(job_id))
-            default_jobs_service.execute_job(str(job_id))
+            get_jobs_service().execute_job(str(job_id))
             return {"status": "completed", "job_id": str(job_id)}
     return _mangum_handler(event, context)

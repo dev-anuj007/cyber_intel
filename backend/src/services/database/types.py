@@ -1,7 +1,6 @@
-"""Database Service Type Definitions and Interfaces."""
-
 from dataclasses import dataclass, field
-from typing import Any, ContextManager, Dict, List, Optional, Protocol
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
 
 
 @dataclass
@@ -41,38 +40,10 @@ class QueryResponse:
     execution_time_ms: float
 
 
-class IDatabaseService(Protocol):
-    """Interface for the Database microservice."""
-
-    def get_connection(self) -> ContextManager[Any]:
-        """Context manager returning an active database connection."""
-        ...
-
-    def execute(self, sql: str, params: Optional[tuple] = None) -> Any:
-        """Execute SQL query."""
-        ...
-
-    def fetchone(self, sql: str, params: Optional[tuple] = None) -> Optional[Any]:
-        """Execute and fetch a single record."""
-        ...
-
-    def fetchall(self, sql: str, params: Optional[tuple] = None) -> List[Any]:
-        """Execute and fetch all matching records."""
-        ...
-
-    def get_health(self) -> DatabaseHealth:
-        """Inspect and return database health and status."""
-        ...
-
-    def get_stats(self) -> DatabaseStats:
-        """Inspect and return core database entity counts."""
-        ...
-
-    def init_schema(self) -> None:
-        """Initialize relational tables and indices."""
-        ...
-
-    def init_database(self) -> None:
-        """Alias to initialize relational tables and indices."""
-        ...
-
+@dataclass
+class DatabaseConfig:
+    db_path: Optional[Union[Path, str]] = None
+    database_url: Optional[str] = None
+    pool_size: int = 20
+    max_overflow: int = 10
+    pool_pre_ping: bool = True

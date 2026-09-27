@@ -1,6 +1,6 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends
 
 from src.core.exceptions import (
     AuthenticationError,
@@ -9,7 +9,11 @@ from src.core.exceptions import (
     InvalidInputError,
     NotFoundError,
 )
-from src.services.auth.auth_service import AuthService, default_auth_service
+from src.services.auth.dependencies import (
+    get_auth_service,
+    get_current_user,
+)
+from src.services.auth.protocols import IAuthService
 from src.services.auth.types import (
     ApiKeyUpdateRequest,
     AuthResponse,
@@ -17,37 +21,8 @@ from src.services.auth.types import (
     UserSigninRequest,
     UserSignupRequest,
 )
-from src.services.logger import update_journey_context
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
-
-
-def get_auth_service() -> AuthService:
-    return default_auth_service
-
-
-def get_current_user_optional(
-    authorization: Optional[str] = Header(None),
-    auth_service: AuthService = Depends(get_auth_service),
-) -> Optional[dict]:
-    if not authorization or not authorization.startswith("Bearer "):
-        return None
-    token = authorization.split(" ", 1)[1].strip()
-    user = auth_service.get_user_from_token(token)
-    if user:
-        update_journey_context(user_id=user["id"], user_email=user["email"])
-    return user
-
-
-def get_current_user(
-    current_user: Optional[dict] = Depends(get_current_user_optional),
-) -> dict:
-    if not current_user:
-        raise AuthenticationError(
-            message="Authentication required or invalid/expired session token",
-            code="UNAUTHENTICATED",
-        )
-    return current_user
 
 
 @router.get("/health")
@@ -58,7 +33,7 @@ def auth_health():
 @router.post("/signup", response_model=AuthResponse)
 def signup(
     req: UserSignupRequest,
-    auth_service: AuthService = Depends(get_auth_service),
+    auth_service: IAuthService = Depends(get_auth_service),
 ):
     try:
         return auth_service.signup(req)
@@ -74,7 +49,7 @@ def signup(
 @router.post("/signin", response_model=AuthResponse)
 def signin(
     req: UserSigninRequest,
-    auth_service: AuthService = Depends(get_auth_service),
+    auth_service: IAuthService = Depends(get_auth_service),
 ):
     try:
         return auth_service.signin(req)
@@ -87,7 +62,7 @@ def signin(
 @router.get("/me", response_model=UserResponse)
 def get_current_user_profile(
     current_user: dict = Depends(get_current_user),
-    auth_service: AuthService = Depends(get_auth_service),
+    auth_service: IAuthService = Depends(get_auth_service),
 ):
     return auth_service.format_user_response(current_user)
 
@@ -96,7 +71,7 @@ def get_current_user_profile(
 def create_or_set_user_api_key(
     req: Optional[ApiKeyUpdateRequest] = None,
     current_user: dict = Depends(get_current_user),
-    auth_service: AuthService = Depends(get_auth_service),
+    auth_service: IAuthService = Depends(get_auth_service),
 ):
     try:
         if req and req.api_key:
@@ -116,7 +91,7 @@ def create_or_set_user_api_key(
 @router.get("/api-key/list")
 def list_user_api_keys(
     current_user: dict = Depends(get_current_user),
-    auth_service: AuthService = Depends(get_auth_service),
+    auth_service: IAuthService = Depends(get_auth_service),
 ):
     keys = auth_service.list_api_keys(current_user["id"])
     return {"items": keys, "total": len(keys)}
@@ -126,7 +101,7 @@ def list_user_api_keys(
 def revoke_user_api_key(
     req: Optional[dict] = None,
     current_user: dict = Depends(get_current_user),
-    auth_service: AuthService = Depends(get_auth_service),
+    auth_service: IAuthService = Depends(get_auth_service),
 ):
     key = req.get("api_key") if isinstance(req, dict) else None
     auth_service.revoke_api_key(current_user["id"], key)
@@ -136,7 +111,7 @@ def revoke_user_api_key(
 @router.delete("/api-key", response_model=UserResponse)
 def delete_user_api_key(
     current_user: dict = Depends(get_current_user),
-    auth_service: AuthService = Depends(get_auth_service),
+    auth_service: IAuthService = Depends(get_auth_service),
 ):
     try:
         return auth_service.delete_user_api_key(current_user["id"])

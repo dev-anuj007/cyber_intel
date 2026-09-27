@@ -100,6 +100,9 @@ OUTPUT FORMAT (JSON):
   "ideal_contact_persona": "CISO / Head of Security / VP Infrastructure"
 }"""
 
+PROMPT_V1 = ACCOUNT_SCORING_V1
+PROMPT_V2 = ACCOUNT_SCORING_V2
+
 PROMPT_TEMPLATES: Dict[str, str] = {
     "v2.0": ACCOUNT_SCORING_V2,
     "v1.0": ACCOUNT_SCORING_V1,

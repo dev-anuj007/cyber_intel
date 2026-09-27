@@ -6,15 +6,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.core.config import ENVIRONMENT, LOGFIRE_TOKEN
 from src.core.dependencies import get_accounts_service, get_database_service, init_core_services
 from src.core.error_handlers import register_error_handlers
-from src.services.accounts import accounts_router
-from src.services.auth import auth_router
-from src.services.crawler import crawler_router
-from src.services.database import database_router, init_database
-from src.services.eval import eval_router
-from src.services.jobs import default_jobs_service, jobs_router
-from src.services.logger import UserJourneyMiddleware, get_logger
-from src.services.prompts import prompts_router
-from src.services.scorer import scorer_router
+from src.services.accounts.api import router as accounts_router
+from src.services.auth.api import router as auth_router
+from src.services.crawler.api import router as crawler_router
+from src.services.database.api import router as database_router
+from src.services.database.dependencies import init_database
+from src.services.eval.api import router as eval_router
+from src.services.jobs.api import router as jobs_router
+from src.services.jobs.dependencies import get_jobs_service
+from src.services.logger.logger_service import get_logger
+from src.services.logger.middleware import UserJourneyMiddleware
+from src.services.prompts.api import router as prompts_router
+from src.services.scorer.api import router as scorer_router
 
 logger = get_logger("gateway")
 
@@ -27,7 +30,7 @@ async def lifespan(app: FastAPI):
         logger.info("Relational schema initialized successfully")
         init_core_services()
         logger.info("Core microservices initialized")
-        default_jobs_service.recover_stale_jobs()
+        get_jobs_service().recover_stale_jobs()
         logger.info("Background jobs service initialized and stale jobs recovered")
     except Exception as e:
         logger.error(f"Error initializing services on startup: {e}")
