@@ -10,13 +10,13 @@ The service follows clean architecture and domain-driven design principles with 
 
 ```mermaid
 flowchart TD
-    API["FastAPI Router - api.py"] --> Svc["AccountsService - accounts_service.py"]
-    Lambda["AWS Lambda Handler - lambda_handler.py"] --> Svc
-    Svc --> Ctx["AccountsServiceDependencyContext - dependencies.py"]
-    Ctx --> Logger["Logger Service"]
-    Ctx --> DB["Database Connection Pool"]
-    Ctx --> Reader["AccountReader - internals/repositories/reader.py"]
-    Ctx --> Writer["AccountWriter - internals/repositories/writer.py"]
+    API["FastAPI<br/>Router"] --> Svc["Accounts<br/>Service"]
+    Lambda["Lambda<br/>Handler"] --> Svc
+    Svc --> Ctx["Dependency<br/>Context"]
+    Ctx --> Logger["Logger<br/>Service"]
+    Ctx --> DB["Database<br/>Connection"]
+    Ctx --> Reader["Account<br/>Reader"]
+    Ctx --> Writer["Account<br/>Writer"]
 ```
 
 ### Module Breakdown
@@ -60,11 +60,16 @@ class AccountsService(IAccountsService):
 ```
 All external dependencies (`logger`, `reader`, `writer`, `get_connection()`) are managed and accessed via `self.context`.
 
-### 2. DTO-First Contract
+### 2. Method Ordering Standard
+In every class across the service:
+- **Public methods** are declared at the top of the class.
+- **Private/internal helper methods** (`_` prefix) are grouped at the bottom under explicit section headers.
+
+### 3. DTO-First Contract
 - Every service method accepts **at most 2 arguments** or a typed query DTO (e.g. `ListAccountsQuery`, `AccountsBySignalQuery`).
 - Every service method returns a **typed response DTO** (e.g. `AccountsPaginatedResponse`, `AccountSearchResponse`, `SaveAccountResponse`, `SummaryStats`).
 
-### 3. Automated Priority Tiering
+### 4. Automated Priority Tiering
 The service automatically evaluates account telemetry to compute a `PriorityTier`:
 
 - **`TIER_1_CRITICAL`** (`tier_1_critical`): Account has at least one signal with `SignalSeverity.CRITICAL`.
@@ -72,12 +77,12 @@ The service automatically evaluates account telemetry to compute a `PriorityTier
 - **`TIER_3_MEDIUM`** (`tier_3_medium`): Account has `SignalSeverity.HIGH` with 1 signal OR any medium/low signals ($>0$ signals).
 - **`TIER_4_LOW`** (`tier_4_low`): Account has 0 signals.
 
-### 4. Multi-Version Snapshot Resolution
+### 5. Multi-Version Snapshot Resolution
 Accounts are keyed by domain (e.g. `domain:acme.corp`) and support immutable version snapshots (`v1`, `v2`, ...). 
 - Querying by domain without a version returns the **latest snapshot** with score resolution.
 - Querying with a specific version (`version="v1"`) returns that exact historical snapshot.
 
-### 5. Lazy Singleton Proxy (`_LazyAccountsServiceProxy`)
+### 6. Lazy Singleton Proxy (`_LazyAccountsServiceProxy`)
 The module exposes `default_accounts_service` backed by `_LazyAccountsServiceProxy`:
 - **Zero Import-Time Side Effects**: Prevents eager database connections or logger initialization during module import.
 - **Prevents Circular Imports**: Eliminates import deadlocks when other services (e.g. `scorer`, `crawler`) cross-reference accounts.
@@ -103,110 +108,125 @@ All endpoints are mounted under `/api/accounts`:
 
 ---
 
-## End-to-End Dataflow Diagrams
+## Dataflow Diagrams (DFD) & Code Entry Points
 
 ### 1. Account Ingestion & Automated Priority Tiering Dataflow
-Dataflow when raw security telemetry is ingested, classified, and persisted:
 
 ```mermaid
-flowchart LR
+flowchart TD
     subgraph Input["1. Input Ingestion"]
-        InPayload["Raw Ingestion Payload<br/>Account / InsertAccountCommand"]
+        InPayload["Raw Ingestion<br/>Payload DTO"]
     end
 
-    subgraph Tiering["2. Automated Priority Classification"]
-        SaveSvc["AccountsService.save_account()"]
-        ComputeTier["compute_priority_tier()"]
-        Eval{"Evaluate Signal Telemetry"}
-        T1["Tier 1 (Critical)"]
-        T2["Tier 2 (High)"]
-        T3["Tier 3 (Medium)"]
-        T4["Tier 4 (Low)"]
+    subgraph Tiering["2. Priority Tiering"]
+        SaveSvc["Save Account<br/>Service Call"]
+        ComputeTier["Compute Priority<br/>Tier Logic"]
+        Eval{"Evaluate<br/>Signals"}
+        T1["Tier 1<br/><b>CRITICAL</b>"]
+        T2["Tier 2<br/><b>HIGH</b>"]
+        T3["Tier 3<br/><b>MEDIUM</b>"]
+        T4["Tier 4<br/><b>LOW</b>"]
     end
 
-    subgraph Persistence["3. Database Persistence"]
-        Writer["AccountWriter.insert_account()"]
-        DB[("PostgreSQL Database<br/>accounts / assets / signals")]
+    subgraph Persistence["3. Persistence"]
+        Writer["Account<br/>Writer"]
+        DB[("PostgreSQL<br/>Database")]
     end
 
     subgraph Output["4. Result Contract"]
-        Resp["SaveAccountResponse<br/>(success=True, account_id, tier)"]
+        Resp["Save Account<br/>Response DTO"]
     end
 
     InPayload --> SaveSvc
     SaveSvc --> ComputeTier
     ComputeTier --> Eval
-    Eval -->|"has critical signal"| T1
-    Eval -->|"high severity + >= 2 signals"| T2
-    Eval -->|"high / med / low signals"| T3
+    Eval -->|"critical signal"| T1
+    Eval -->|"high & 2+ signals"| T2
+    Eval -->|"high / med / low"| T3
     Eval -->|"0 signals"| T4
     T1 & T2 & T3 & T4 --> Writer
     Writer --> DB
     DB --> Resp
 ```
 
+#### 🔍 Code Entry Points & Execution Trace
+| Flow Step | Entry Function / Class | Source File | Description |
+| :--- | :--- | :--- | :--- |
+| **Service Ingestion Entry** | `AccountsService.save_account(command)` | [`accounts_service.py`](./accounts_service.py) | Ingestion entry point to save or update an account snapshot. |
+| **Priority Classification** | `AccountsService.compute_priority_tier(account)` | [`accounts_service.py`](./accounts_service.py) | Evaluates security signals and computes `PriorityTier`. |
+| **Database Writer Repository** | `AccountWriter.insert_account(account, ...)` | [`internals/repositories/writer.py`](./internals/repositories/writer.py) | Persists account entities, assets, and signals to PostgreSQL. |
+
+---
+
 ### 2. Account Detail & AI Score Resolution Dataflow (`GET /api/accounts/{account_key}`)
-Dataflow when querying an account and dynamically hydrating historical scan snapshots and AI scores:
 
 ```mermaid
-flowchart LR
+flowchart TD
     subgraph ClientReq["1. HTTP Request"]
-        Req["GET /api/accounts/{account_key}?version={v}"]
+        Req["GET Account<br/>By Key / Version"]
     end
 
-    subgraph ServiceLayer["2. Service Orchestration"]
-        Route["FastAPI Route Handler"]
-        Svc["AccountsService.get_account()"]
-        Reader["AccountReader.load_account()"]
+    subgraph ServiceLayer["2. Service Layer"]
+        Route["FastAPI<br/>Route Handler"]
+        Svc["Accounts<br/>Service"]
+        Reader["Account<br/>Reader"]
     end
 
-    subgraph DataStore["3. Data Stores & Services"]
-        DB[("PostgreSQL Database")]
-        Scorer["Scorer Service (IScorerService)"]
+    subgraph DataStore["3. Data Stores"]
+        DB[("PostgreSQL<br/>Database")]
+        Scorer["Scorer<br/>Service"]
     end
 
-    subgraph ClientResp["4. Hydrated Response"]
-        AccountDTO["Hydrated Account DTO<br/>(Domains, Assets, Signals, AI Score)"]
+    subgraph ClientResp["4. Response"]
+        AccountDTO["Hydrated<br/>Account DTO"]
     end
 
     Req --> Route
     Route --> Svc
     Svc --> Reader
     Reader --> DB
-    DB -->|"Raw account snapshot"| Reader
+    DB -->|"Snapshot record"| Reader
     Reader -->|"Domain model"| Svc
     Svc --> Route
-    Route -->|"Resolve missing AI score"| Scorer
+    Route -->|"Resolve score"| Scorer
     Scorer --> DB
     DB -->|"Score record"| Scorer
-    Scorer -->|"Hydrate latest score"| AccountDTO
+    Scorer -->|"Hydrate score"| AccountDTO
 ```
 
+#### 🔍 Code Entry Points & Execution Trace
+| Flow Step | Entry Function / Class | Source File | Description |
+| :--- | :--- | :--- | :--- |
+| **API Route Handler** | `get_account_detail(account_key, version)` | [`api.py`](./api.py) | FastAPI endpoint resolving account detail and AI score. |
+| **Service Detail Fetch** | `AccountsService.get_account(query)` | [`accounts_service.py`](./accounts_service.py) | Retrieves account snapshot and executes version lookup. |
+| **Database Reader Repository** | `AccountReader.load_account(account_key, ...)` | [`internals/repositories/reader.py`](./internals/repositories/reader.py) | Loads domain models, assets, and security signals from SQL. |
+
+---
+
 ### 3. Prospecting Search & Filtered Listing Dataflow (`GET /api/accounts`, `GET /api/accounts/search`)
-Dataflow for paginated priority tier filtering and domain search queries:
 
 ```mermaid
-flowchart LR
+flowchart TD
     subgraph ClientReqs["1. Request Queries"]
-        ReqList["GET /api/accounts<br/>(tier, has_critical, pagination)"]
-        ReqSearch["GET /api/accounts/search<br/>(prefix / keyword query)"]
+        ReqList["Paginated<br/>Accounts Query"]
+        ReqSearch["Keyword Search<br/>Prefix Query"]
     end
 
     subgraph QueryExecution["2. Repository Execution"]
-        ListSvc["list_accounts(ListAccountsQuery)"]
-        SearchSvc["search_accounts(query, limit)"]
-        Reader["AccountReader"]
+        ListSvc["List Accounts<br/>Method"]
+        SearchSvc["Search Accounts<br/>Method"]
+        Reader["Account<br/>Reader"]
     end
 
     subgraph DBQueries["3. PostgreSQL Index Queries"]
-        StatsQuery[("Summary Stats & Metrics")]
-        IndexScan[("Tier / Domain Prefix Index Scan")]
-        BatchFetch[("Account Summary Batch Fetch")]
+        StatsQuery[("Summary Stats<br/>& Metrics")]
+        IndexScan[("Tier & Domain<br/>Index Scan")]
+        BatchFetch[("Account Batch<br/>Fetch")]
     end
 
     subgraph Responses["4. Response Models"]
-        ListOut["AccountsPaginatedResponse<br/>(items, total, page, pages)"]
-        SearchOut["AccountSearchResponse<br/>(query, total, results)"]
+        ListOut["Paginated<br/>Response DTO"]
+        SearchOut["Search<br/>Response DTO"]
     end
 
     ReqList --> ListSvc
@@ -219,6 +239,16 @@ flowchart LR
     BatchFetch --> ListOut
     BatchFetch --> SearchOut
 ```
+
+#### 🔍 Code Entry Points & Execution Trace
+| Flow Step | Entry Function / Class | Source File | Description |
+| :--- | :--- | :--- | :--- |
+| **API List Route** | `list_accounts_api(tier, search, page)` | [`api.py`](./api.py) | FastAPI endpoint for paginated and filtered prospecting. |
+| **API Search Route** | `search_accounts_api(q, limit)` | [`api.py`](./api.py) | FastAPI endpoint for prefix-based quick search. |
+| **Service List Entry** | `AccountsService.list_accounts(query)` | [`accounts_service.py`](./accounts_service.py) | Orchestrates paginated listing with total summary statistics. |
+| **Service Search Entry** | `AccountsService.search_accounts(query)` | [`accounts_service.py`](./accounts_service.py) | Executes fast prefix search on account keys and domains. |
+| **Database Reader Paginated** | `AccountReader.list_accounts_paginated(...)` | [`internals/repositories/reader.py`](./internals/repositories/reader.py) | Executes indexed PostgreSQL queries with limit/offset. |
+| **Database Reader Search** | `AccountReader.search_accounts(query, ...)` | [`internals/repositories/reader.py`](./internals/repositories/reader.py) | Performs fast domain substring and prefix matching. |
 
 ---
 
@@ -247,9 +277,6 @@ Check and enforce PEP 8 style guidelines with a max line length of 88 characters
 ```powershell
 # Check for lint issues and import sorting
 ruff check src/services/accounts --line-length=88
-
-# Automatically fix lint issues
-ruff check src/services/accounts --line-length=88 --fix
 
 # Check formatting without modifying files
 ruff format src/services/accounts --line-length=88 --check
