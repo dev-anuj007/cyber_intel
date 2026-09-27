@@ -21,7 +21,9 @@ def _extract_base_domain(account_key: str) -> str:
 
 
 class ScoreReader(IScoreReader):
-    def get_latest_score(self, conn: Any, account_key: str, version: Optional[str] = None) -> Optional[dict]:
+    def get_latest_score(
+        self, conn: Any, account_key: str, version: Optional[str] = None
+    ) -> Optional[dict]:
         base_dom = _extract_base_domain(account_key)
         target_version = version
         if not target_version and account_key.count(":") >= 2:
@@ -32,16 +34,29 @@ class ScoreReader(IScoreReader):
         with _get_session(conn) as session:
             if target_version:
                 v_tag = target_version.lower()
-                candidate_keys = [f"domain:{base_dom}:{v_tag}", f"{base_dom}:{v_tag}"]
+                candidate_keys = [
+                    f"domain:{base_dom}:{v_tag}",
+                    f"{base_dom}:{v_tag}",
+                ]
                 if v_tag == "v1":
-                    candidate_keys.extend([f"domain:{base_dom}", base_dom, f"domain:{base_dom}:v1", f"{base_dom}:v1"])
+                    candidate_keys.extend(
+                        [
+                            f"domain:{base_dom}",
+                            base_dom,
+                            f"domain:{base_dom}:v1",
+                            f"{base_dom}:v1",
+                        ]
+                    )
                 statement = (
                     select(AIScoreTable)
                     .where(
                         col(AIScoreTable.account_key).in_(candidate_keys),
                         AIScoreTable.is_latest == 1,
                     )
-                    .order_by(col(AIScoreTable.version).desc(), col(AIScoreTable.id).desc())
+                    .order_by(
+                        col(AIScoreTable.version).desc(),
+                        col(AIScoreTable.id).desc(),
+                    )
                     .limit(1)
                 )
                 row = session.exec(statement).first()
@@ -49,7 +64,10 @@ class ScoreReader(IScoreReader):
                     statement_fallback = (
                         select(AIScoreTable)
                         .where(col(AIScoreTable.account_key).in_(candidate_keys))
-                        .order_by(col(AIScoreTable.version).desc(), col(AIScoreTable.id).desc())
+                        .order_by(
+                            col(AIScoreTable.version).desc(),
+                            col(AIScoreTable.id).desc(),
+                        )
                         .limit(1)
                     )
                     row = session.exec(statement_fallback).first()
@@ -60,7 +78,8 @@ class ScoreReader(IScoreReader):
                         or_(
                             AIScoreTable.account_key == account_key,
                             AIScoreTable.account_key == f"domain:{account_key}",
-                            AIScoreTable.account_key == account_key.replace("domain:", ""),
+                            AIScoreTable.account_key
+                            == account_key.replace("domain:", ""),
                             AIScoreTable.account_key == f"domain:{base_dom}",
                             AIScoreTable.account_key == base_dom,
                             col(AIScoreTable.account_key).like(f"domain:{base_dom}:v%"),
@@ -68,7 +87,10 @@ class ScoreReader(IScoreReader):
                         ),
                         AIScoreTable.is_latest == 1,
                     )
-                    .order_by(col(AIScoreTable.version).desc(), col(AIScoreTable.id).desc())
+                    .order_by(
+                        col(AIScoreTable.version).desc(),
+                        col(AIScoreTable.id).desc(),
+                    )
                     .limit(1)
                 )
                 row = session.exec(statement).first()
@@ -79,14 +101,20 @@ class ScoreReader(IScoreReader):
                             or_(
                                 AIScoreTable.account_key == account_key,
                                 AIScoreTable.account_key == f"domain:{account_key}",
-                                AIScoreTable.account_key == account_key.replace("domain:", ""),
+                                AIScoreTable.account_key
+                                == account_key.replace("domain:", ""),
                                 AIScoreTable.account_key == f"domain:{base_dom}",
                                 AIScoreTable.account_key == base_dom,
-                                col(AIScoreTable.account_key).like(f"domain:{base_dom}:v%"),
+                                col(AIScoreTable.account_key).like(
+                                    f"domain:{base_dom}:v%"
+                                ),
                                 col(AIScoreTable.account_key).like(f"{base_dom}:v%"),
                             )
                         )
-                        .order_by(col(AIScoreTable.version).desc(), col(AIScoreTable.id).desc())
+                        .order_by(
+                            col(AIScoreTable.version).desc(),
+                            col(AIScoreTable.id).desc(),
+                        )
                         .limit(1)
                     )
                     row = session.exec(fallback).first()
@@ -95,7 +123,9 @@ class ScoreReader(IScoreReader):
                 return None
             return self._format_ai_score_model(row)
 
-    def get_score_history(self, conn: Any, account_key: str, version: Optional[str] = None) -> List[dict]:
+    def get_score_history(
+        self, conn: Any, account_key: str, version: Optional[str] = None
+    ) -> List[dict]:
         base_dom = _extract_base_domain(account_key)
         target_version = version
         if not target_version and account_key.count(":") >= 2:
@@ -106,13 +136,26 @@ class ScoreReader(IScoreReader):
         with _get_session(conn) as session:
             if target_version:
                 v_tag = target_version.lower()
-                candidate_keys = [f"domain:{base_dom}:{v_tag}", f"{base_dom}:{v_tag}"]
+                candidate_keys = [
+                    f"domain:{base_dom}:{v_tag}",
+                    f"{base_dom}:{v_tag}",
+                ]
                 if v_tag == "v1":
-                    candidate_keys.extend([f"domain:{base_dom}", base_dom, f"domain:{base_dom}:v1", f"{base_dom}:v1"])
+                    candidate_keys.extend(
+                        [
+                            f"domain:{base_dom}",
+                            base_dom,
+                            f"domain:{base_dom}:v1",
+                            f"{base_dom}:v1",
+                        ]
+                    )
                 statement = (
                     select(AIScoreTable)
                     .where(col(AIScoreTable.account_key).in_(candidate_keys))
-                    .order_by(col(AIScoreTable.version).desc(), col(AIScoreTable.id).desc())
+                    .order_by(
+                        col(AIScoreTable.version).desc(),
+                        col(AIScoreTable.id).desc(),
+                    )
                 )
             else:
                 statement = (
@@ -121,28 +164,93 @@ class ScoreReader(IScoreReader):
                         or_(
                             AIScoreTable.account_key == account_key,
                             AIScoreTable.account_key == f"domain:{account_key}",
-                            AIScoreTable.account_key == account_key.replace("domain:", ""),
+                            AIScoreTable.account_key
+                            == account_key.replace("domain:", ""),
                             AIScoreTable.account_key == f"domain:{base_dom}",
                             AIScoreTable.account_key == base_dom,
                             col(AIScoreTable.account_key).like(f"domain:{base_dom}:v%"),
                             col(AIScoreTable.account_key).like(f"{base_dom}:v%"),
                         )
                     )
-                    .order_by(col(AIScoreTable.version).desc(), col(AIScoreTable.id).desc())
+                    .order_by(
+                        col(AIScoreTable.version).desc(),
+                        col(AIScoreTable.id).desc(),
+                    )
                 )
             rows = session.exec(statement).all()
             return [self._format_ai_score_model(r) for r in rows]
 
+    def get_llm_stats(self, conn: Any) -> dict:
+        with _get_session(conn) as session:
+            rows = session.exec(select(AIScoreTable)).all()
+            if not rows:
+                return {
+                    "total_calls": 0,
+                    "total_tokens": 0,
+                    "total_cost_usd": 0.0,
+                    "avg_latency_ms": 0.0,
+                }
+            total_calls = len(rows)
+            total_cost = sum(r.cost_usd or 0.0 for r in rows)
+            total_latency = sum(r.latency_ms or 0 for r in rows)
+            avg_latency = total_latency / total_calls if total_calls > 0 else 0.0
+
+            total_tokens = 0
+            for r in rows:
+                if r.tokens_used:
+                    try:
+                        t_data = (
+                            json.loads(r.tokens_used)
+                            if isinstance(r.tokens_used, str)
+                            else r.tokens_used
+                        )
+                        if isinstance(t_data, dict):
+                            total_tokens += (
+                                t_data.get("total_tokens")
+                                or t_data.get("total")
+                                or (
+                                    (
+                                        t_data.get("prompt_tokens")
+                                        or t_data.get("prompt", 0)
+                                    )
+                                    + (
+                                        t_data.get("completion_tokens")
+                                        or t_data.get("candidates", 0)
+                                    )
+                                )
+                            )
+                        elif isinstance(t_data, int):
+                            total_tokens += t_data
+                    except Exception:
+                        pass
+
+            return {
+                "total_calls": total_calls,
+                "total_tokens": total_tokens,
+                "total_cost_usd": round(total_cost, 6),
+                "avg_latency_ms": round(avg_latency, 2),
+            }
+
+    # =========================================================================
+    # Internal / Formatting Helpers
+    # =========================================================================
+
     def _format_ai_score_model(self, model: AIScoreTable) -> dict:
-        raw_risks = getattr(model, "key_risks_json", None) or getattr(model, "key_risks", None)
+        raw_risks = getattr(model, "key_risks_json", None) or getattr(
+            model, "key_risks", None
+        )
         try:
             risks = json.loads(raw_risks) if isinstance(raw_risks, str) else raw_risks
         except Exception:
             risks = [raw_risks] if raw_risks else []
 
-        raw_tokens = getattr(model, "tokens_used_json", None) or getattr(model, "tokens_used", None)
+        raw_tokens = getattr(model, "tokens_used_json", None) or getattr(
+            model, "tokens_used", None
+        )
         try:
-            tokens = json.loads(raw_tokens) if isinstance(raw_tokens, str) else raw_tokens
+            tokens = (
+                json.loads(raw_tokens) if isinstance(raw_tokens, str) else raw_tokens
+            )
         except Exception:
             tokens = {}
 

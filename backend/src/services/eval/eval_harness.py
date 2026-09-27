@@ -7,7 +7,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from src.services.accounts.types import Account, Asset, SecuritySignal, SignalSeverity
 from src.services.logger.logger_service import get_logger
-from src.services.scorer.scorer_service import ScorerService as AccountScorer
+from src.services.scorer.dependencies import create_scorer_service
+from src.services.scorer.types import ScoreAccountCommand
 
 logger = get_logger("eval.harness")
 
@@ -250,7 +251,7 @@ def run_eval(
             logger.warning("GEMINI_API_KEY not found; running in dry-run mode.")
             skip_scoring = True
         else:
-            scorer = AccountScorer(api_key=effective_key, prompt_version=prompt_version)
+            scorer = create_scorer_service(api_key=effective_key, prompt_version=prompt_version)
 
     def process_example(idx: int, example: dict) -> Tuple[int, dict]:
         account = create_mock_account(example)
@@ -289,10 +290,12 @@ def run_eval(
         else:
             try:
                 score = scorer.score_account(
-                    account,
-                    prompt_version=prompt_version,
-                    custom_prompt_template=custom_prompt_template,
-                    save_to_db=False,
+                    ScoreAccountCommand(
+                        account=account,
+                        prompt_version=prompt_version,
+                        custom_prompt_template=custom_prompt_template,
+                        save_to_db=False,
+                    )
                 )
                 return idx, {
                     "expected_tier": expected_tier,
