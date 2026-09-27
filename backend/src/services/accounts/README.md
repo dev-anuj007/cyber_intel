@@ -106,98 +106,118 @@ All endpoints are mounted under `/api/accounts`:
 ## End-to-End Dataflow Diagrams
 
 ### 1. Account Ingestion & Automated Priority Tiering Dataflow
-When crawlers or external feeds push raw scan data into the accounts service:
+Dataflow when raw security telemetry is ingested, classified, and persisted:
 
 ```mermaid
-sequenceDiagram
-    autonumber
-    participant Client as Ingestion / Crawler Client
-    participant API as FastAPI Router (api.py)
-    participant Svc as AccountsService
-    participant Tier as Tiering Engine (compute_priority_tier)
-    participant Writer as AccountWriter
-    participant DB as PostgreSQL Database
+flowchart LR
+    subgraph Input["1. Input Ingestion"]
+        InPayload["Raw Ingestion Payload<br/>Account / InsertAccountCommand"]
+    end
 
-    Client->>API: Save Account Payload (JSON / DTO)
-    API->>Svc: save_account(Account | InsertAccountCommand)
-    Svc->>Tier: compute_priority_tier(account)
-    Note over Tier: Evaluates Signals<br/>CRITICAL -> Tier 1<br/>HIGH (>=2) -> Tier 2<br/>HIGH/MED/LOW -> Tier 3<br/>None -> Tier 4
-    Tier-->>Svc: PriorityTier Enum
-    Svc->>Writer: insert_account(conn, account, tier)
-    Writer->>DB: INSERT INTO accounts / assets / signals
-    DB-->>Writer: Account DB Record ID
-    Writer-->>Svc: account_id
-    Svc->>DB: conn.commit()
-    Svc-->>API: SaveAccountResponse(success=True, account_id, tier)
-    API-->>Client: 200 OK (SaveAccountResponse)
+    subgraph Tiering["2. Automated Priority Classification"]
+        SaveSvc["AccountsService.save_account()"]
+        ComputeTier["compute_priority_tier()"]
+        Eval{"Evaluate Signal Telemetry"}
+        T1["Tier 1 (Critical)"]
+        T2["Tier 2 (High)"]
+        T3["Tier 3 (Medium)"]
+        T4["Tier 4 (Low)"]
+    end
+
+    subgraph Persistence["3. Database Persistence"]
+        Writer["AccountWriter.insert_account()"]
+        DB[("PostgreSQL Database<br/>accounts / assets / signals")]
+    end
+
+    subgraph Output["4. Result Contract"]
+        Resp["SaveAccountResponse<br/>(success=True, account_id, tier)"]
+    end
+
+    InPayload --> SaveSvc
+    SaveSvc --> ComputeTier
+    ComputeTier --> Eval
+    Eval -->|"has critical signal"| T1
+    Eval -->|"high severity + >= 2 signals"| T2
+    Eval -->|"high / med / low signals"| T3
+    Eval -->|"0 signals"| T4
+    T1 & T2 & T3 & T4 --> Writer
+    Writer --> DB
+    DB --> Resp
 ```
 
 ### 2. Account Detail & AI Score Resolution Dataflow (`GET /api/accounts/{account_key}`)
-When a user or frontend views an account's detail view:
+Dataflow when querying an account and dynamically hydrating historical scan snapshots and AI scores:
 
 ```mermaid
-sequenceDiagram
-    autonumber
-    participant UI as React Frontend / Client
-    participant API as FastAPI Router (api.py)
-    participant Svc as AccountsService
-    participant Reader as AccountReader
-    participant DB as PostgreSQL Database
-    participant Scorer as Scorer Service (IScorerService)
-
-    UI->>API: GET /api/accounts/{account_key}?version={v}
-    API->>Svc: get_account(account_key, version)
-    Svc->>Reader: load_account(conn, account_key, version)
-    Reader->>DB: SELECT account, assets, signals, versions
-    DB-->>Reader: Raw Account Record
-    Reader-->>Svc: Hydrated Account Domain Model
-    Svc-->>API: Account Model
-    alt Account has no cached AI score
-        API->>Scorer: get_latest_score_for_account(account_key)
-        Scorer->>DB: SELECT latest AI score from scores table
-        DB-->>Scorer: Score record
-        Scorer-->>API: AccountScore
-        API->>API: Attach latest_score to Account
+flowchart LR
+    subgraph ClientReq["1. HTTP Request"]
+        Req["GET /api/accounts/{account_key}?version={v}"]
     end
-    API-->>UI: 200 OK (Account DTO with AI Score)
+
+    subgraph ServiceLayer["2. Service Orchestration"]
+        Route["FastAPI Route Handler"]
+        Svc["AccountsService.get_account()"]
+        Reader["AccountReader.load_account()"]
+    end
+
+    subgraph DataStore["3. Data Stores & Services"]
+        DB[("PostgreSQL Database")]
+        Scorer["Scorer Service (IScorerService)"]
+    end
+
+    subgraph ClientResp["4. Hydrated Response"]
+        AccountDTO["Hydrated Account DTO<br/>(Domains, Assets, Signals, AI Score)"]
+    end
+
+    Req --> Route
+    Route --> Svc
+    Svc --> Reader
+    Reader --> DB
+    DB -->|"Raw account snapshot"| Reader
+    Reader -->|"Domain model"| Svc
+    Svc --> Route
+    Route -->|"Resolve missing AI score"| Scorer
+    Scorer --> DB
+    DB -->|"Score record"| Scorer
+    Scorer -->|"Hydrate latest score"| AccountDTO
 ```
 
 ### 3. Prospecting Search & Filtered Listing Dataflow (`GET /api/accounts`, `GET /api/accounts/search`)
+Dataflow for paginated priority tier filtering and domain search queries:
 
 ```mermaid
-sequenceDiagram
-    autonumber
-    participant UI as Prospecting Dashboard UI
-    participant API as FastAPI Router (api.py)
-    participant Svc as AccountsService
-    participant Reader as AccountReader
-    participant DB as PostgreSQL Database
-
-    alt Filtered Account List (/api/accounts)
-        UI->>API: GET /api/accounts?priority_tier=tier_1_critical&skip=0&limit=25
-        API->>Svc: list_accounts(ListAccountsQuery)
-        Svc->>Reader: get_summary_stats(conn)
-        Reader->>DB: SELECT tier counts & signal metrics
-        DB-->>Reader: Summary Stats
-        Svc->>Reader: get_accounts_by_tier(conn, tier, skip, limit)
-        Reader->>DB: SELECT account keys by tier (Paginated)
-        DB-->>Reader: Account Keys & Total Count
-        Svc->>Reader: load_accounts_summary_batch(conn, keys)
-        Reader->>DB: SELECT summary rows for keys
-        DB-->>Reader: Batch Summaries
-        Svc-->>API: AccountsPaginatedResponse(items, total, page, pages)
-    else Prefix / Domain Search (/api/accounts/search)
-        UI->>API: GET /api/accounts/search?q=acme&limit=10
-        API->>Svc: search_accounts(query="acme", limit=10)
-        Svc->>Reader: search_accounts_by_domain(conn, query, limit)
-        Reader->>DB: SELECT keys matching domain prefix
-        DB-->>Reader: Matching Keys
-        Svc->>Reader: load_accounts_summary_batch(conn, keys)
-        Reader->>DB: SELECT summary rows for keys
-        DB-->>Reader: Batch Summaries
-        Svc-->>API: AccountSearchResponse(query, total, results)
+flowchart LR
+    subgraph ClientReqs["1. Request Queries"]
+        ReqList["GET /api/accounts<br/>(tier, has_critical, pagination)"]
+        ReqSearch["GET /api/accounts/search<br/>(prefix / keyword query)"]
     end
-    API-->>UI: 200 OK (JSON Response)
+
+    subgraph QueryExecution["2. Repository Execution"]
+        ListSvc["list_accounts(ListAccountsQuery)"]
+        SearchSvc["search_accounts(query, limit)"]
+        Reader["AccountReader"]
+    end
+
+    subgraph DBQueries["3. PostgreSQL Index Queries"]
+        StatsQuery[("Summary Stats & Metrics")]
+        IndexScan[("Tier / Domain Prefix Index Scan")]
+        BatchFetch[("Account Summary Batch Fetch")]
+    end
+
+    subgraph Responses["4. Response Models"]
+        ListOut["AccountsPaginatedResponse<br/>(items, total, page, pages)"]
+        SearchOut["AccountSearchResponse<br/>(query, total, results)"]
+    end
+
+    ReqList --> ListSvc
+    ReqSearch --> SearchSvc
+    ListSvc --> Reader
+    SearchSvc --> Reader
+    Reader --> StatsQuery
+    Reader --> IndexScan
+    IndexScan --> BatchFetch
+    BatchFetch --> ListOut
+    BatchFetch --> SearchOut
 ```
 
 ---
