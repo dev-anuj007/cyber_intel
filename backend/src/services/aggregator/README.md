@@ -10,15 +10,15 @@ The service follows clean architecture and domain-driven design principles with 
 
 ```mermaid
 flowchart TD
-    Ingest["Raw Telemetry / JSONL Feeds"] --> Svc["AggregatorService - aggregator_service.py"]
-    Svc --> Ctx["AggregatorServiceDependencyContext - dependencies.py"]
-    Ctx --> Logger["Logger Service"]
-    Ctx --> Extractor["FeatureExtractor - internals/parsers.py"]
-    Ctx --> Resolver["AccountKeyResolver - internals/resolvers.py"]
-    Ctx --> Detector["SignalDetector - internals/signals.py"]
-    Ctx --> Reader["JsonlReader - internals/repositories/reader.py"]
-    Svc --> Builder["AccountBuilder & _AccountBuffer - internals/builder.py"]
-    Builder --> Output["Normalized Account Profiles"]
+    Ingest["Raw Telemetry / JSONL Feeds"] --> Svc["AggregatorService<br/><code>aggregator_service.py</code>"]
+    Svc --> Ctx["Dependency Context<br/><code>dependencies.py</code>"]
+    Ctx --> Logger["BaseLogger"]
+    Ctx --> Extractor["FeatureExtractor<br/><code>internals/parsers.py</code>"]
+    Ctx --> Resolver["AccountKeyResolver<br/><code>internals/resolvers.py</code>"]
+    Ctx --> Detector["SignalDetector<br/><code>internals/signals.py</code>"]
+    Ctx --> Reader["JsonlReader<br/><code>internals/repositories/reader.py</code>"]
+    Svc --> Builder["AccountBuilder & _AccountBuffer<br/><code>internals/builder.py</code>"]
+    Builder --> Output["Normalized Account Profiles<br/><code>Account (types.py)</code>"]
 ```
 
 ### Module Breakdown
@@ -49,33 +49,45 @@ aggregator/
 
 ---
 
-## Dataflow Diagrams (DFD)
+## Dataflow Diagrams (DFD) & Code Entry Points
 
 ### 1. Raw Telemetry Ingestion & Feature Extraction Flow
 
 ```mermaid
 flowchart TD
-    Raw["Raw Shodan / Network Record"] --> Parse["FeatureExtractor.extract_features()"]
-    Parse --> IP["Format IP Address (int to IPv4 string)"]
-    Parse --> HTTP["Extract HTTP status, server header, cloud provider"]
-    Parse --> Vuln["FeatureExtractor.extract_vulnerability_features()"]
-    Vuln --> Metrics["Compute vulnerability_count, max_cvss, max_epss, kev_count, ransomware_count"]
-    Metrics --> Feat["RecordFeatures / Dict Output"]
+    Raw["Raw Shodan / Network Record<br/><i>(Dict / ProcessRecordQuery)</i>"] --> Parse["FeatureExtractor.extract_features()<br/><i>(internals/parsers.py)</i>"]
+    Parse --> IP["Format IP Address<br/><i>(int to IPv4 string)</i>"]
+    Parse --> HTTP["Extract HTTP status, server,<br/>cloud provider, and tags"]
+    Parse --> Vuln["FeatureExtractor<br/>.extract_vulnerability_features()<br/><i>(internals/parsers.py)</i>"]
+    Vuln --> Metrics["Compute vulnerability_count, max_cvss,<br/>max_epss, kev_count, ransomware_count"]
+    Metrics --> Feat["RecordFeatures / Dict Output<br/><i>(Standardized Feature Map)</i>"]
+    IP --> Feat
+    HTTP --> Feat
 ```
+
+#### 🔍 Code Entry Points & Execution Trace
+| Flow Step | Entry Function / Class | Source File | Description |
+| :--- | :--- | :--- | :--- |
+| **Service Entry Point** | `AggregatorService.extract_features(record)` | [`aggregator_service.py`](./aggregator_service.py) | Top-level service delegator for feature extraction. |
+| **Feature Parser** | `FeatureExtractor.extract_features(record)` | [`internals/parsers.py`](./internals/parsers.py) | Parses network, port, product, OS, cloud, and HTTP headers. |
+| **Vulnerability Aggregator** | `FeatureExtractor.extract_vulnerability_features(vulns)` | [`internals/parsers.py`](./internals/parsers.py) | Computes `max_cvss`, `max_epss`, `kev_count`, and `ransomware_count`. |
+| **IP Normalizer** | `FeatureExtractor.format_ip(ip_val)` | [`internals/parsers.py`](./internals/parsers.py) | Converts integer IP or validates string IP into standard IPv4 format. |
+
+---
 
 ### 2. Security Signal Detection & Attack Surface Heuristics Flow
 
 ```mermaid
 flowchart TD
-    Feat["RecordFeatures"] --> SigDet["SignalDetector.detect_signals()"]
-    SigDet --> Tech["Check tags (e.g., 'eol-product') -> High Technology Risk"]
-    SigDet --> KEV["Check kev_count > 0 -> Critical CISA KEV Vulnerability"]
-    SigDet --> CVSS["Check max_cvss (>=9.0 Critical, >=7.0 High) -> CVSS Vulnerability"]
-    SigDet --> EPSS["Check max_epss >= 0.50 -> High Exploitation Probability"]
-    SigDet --> Ransom["Check ransomware_campaign != null -> Critical Ransomware Association"]
-    SigDet --> VulnCount["Check vulnerability_count >= 5 -> Medium Multiple Vulnerabilities"]
-    SigDet --> Ports["Check port not in (80, 443) -> Low Non-Standard Exposed Port"]
-    Tech --> Signals["List of SecuritySignal Entities"]
+    Feat["RecordFeatures / Dict<br/><i>(Standardized Feature Map)</i>"] --> SigDet["SignalDetector.detect_signals()<br/><i>(internals/signals.py)</i>"]
+    SigDet --> Tech["Check tags (e.g. 'eol-product')<br/>&rarr; <b>HIGH: eol_product</b>"]
+    SigDet --> KEV["Check kev_count > 0<br/>&rarr; <b>CRITICAL: kev_vulnerability</b>"]
+    SigDet --> CVSS["Check max_cvss<br/>&ge; 9.0 CRITICAL | &ge; 7.0 HIGH<br/>&rarr; <b>high_severity_vulnerability</b>"]
+    SigDet --> EPSS["Check max_epss &ge; 0.50<br/>&rarr; <b>HIGH: high_exploitation_probability</b>"]
+    SigDet --> Ransom["Check ransomware_campaign != null<br/>&rarr; <b>CRITICAL: ransomware_associated_vulnerability</b>"]
+    SigDet --> VulnCount["Check vulnerability_count &ge; 5<br/>&rarr; <b>MEDIUM: multiple_vulnerabilities</b>"]
+    SigDet --> Ports["Check port not in (80, 443)<br/>&rarr; <b>LOW: non_standard_exposed_port</b>"]
+    Tech --> Signals["List of SecuritySignal Entities<br/><i>(Name, Severity, Category, Evidence)</i>"]
     KEV --> Signals
     CVSS --> Signals
     EPSS --> Signals
@@ -84,19 +96,42 @@ flowchart TD
     Ports --> Signals
 ```
 
+#### 🔍 Code Entry Points & Execution Trace
+| Flow Step | Entry Function / Class | Source File | Description |
+| :--- | :--- | :--- | :--- |
+| **Service Entry Point** | `AggregatorService.detect_signals(features)` | [`aggregator_service.py`](./aggregator_service.py) | Accepts `RecordFeatures` or dictionary and delegates to detector. |
+| **Signal Detector Hub** | `SignalDetector.detect_signals(features)` | [`internals/signals.py`](./internals/signals.py) | Coordinates technology, vulnerability, and port detection passes. |
+| **Technology Risk Rule** | `SignalDetector._detect_technology_signals(features)` | [`internals/signals.py`](./internals/signals.py) | Flags end-of-life technologies and deprecated products. |
+| **Vulnerability Risk Rules** | `SignalDetector._detect_vulnerability_signals(features)` | [`internals/signals.py`](./internals/signals.py) | Evaluates CISA KEV, EPSS exploitability, CVSS, and ransomware campaigns. |
+| **Port Exposure Rule** | `SignalDetector._detect_port_signals(features)` | [`internals/signals.py`](./internals/signals.py) | Identifies non-standard exposed perimeter ports. |
+
+---
+
 ### 3. Account Key Resolution & Multi-Asset Aggregation Flow
 
 ```mermaid
 flowchart TD
-    Record["Raw Record + Candidate Domains + Hostnames"] --> Res["AccountKeyResolver.resolve()"]
-    Res --> Filter["Filter Transit & PTR Domains (e.g., cloudflare.net, aws ec2)"]
-    Filter --> Match["extract_root_domain_match() against candidate hostnames"]
-    Match --> Keys["Resolved Account Keys (e.g., 'domain:acme.com')"]
-    Keys --> Builder["AccountBuilder.add_record()"]
-    Builder --> Buffer["_AccountBuffer (Deduplicates IPs, Hostnames, Ports, Products, Signals)"]
-    Buffer --> Build["AccountBuilder.build()"]
-    Build --> Accounts["Dict[str, Account] Unified Targets"]
+    Record["Raw Record + Candidate Domains + Hostnames"] --> Res["AccountKeyResolver.resolve()<br/><i>(internals/resolvers.py)</i>"]
+    Res --> Filter["Filter Transit & PTR Domains<br/><i>(internals/domain_utils.py)</i>"]
+    Filter --> Match["extract_root_domain_match()<br/><i>(Match hostnames against root domains)</i>"]
+    Match --> Keys["Resolved Account Keys<br/><i>(e.g., 'domain:acme.com')</i>"]
+    Keys --> Builder["AccountBuilder.add_record()<br/><i>(internals/builder.py)</i>"]
+    Builder --> Buffer["_AccountBuffer<br/><i>(Deduplicates IPs, Ports, Hostnames, Signals)</i>"]
+    Buffer --> Build["AccountBuilder.build()<br/><i>(Converts buffers to Account instances)</i>"]
+    Build --> Accounts["Dict[str, Account] Unified Targets<br/><i>(Or List[Account] via aggregate)</i>"]
 ```
+
+#### 🔍 Code Entry Points & Execution Trace
+| Flow Step | Entry Function / Class | Source File | Description |
+| :--- | :--- | :--- | :--- |
+| **Batch Aggregation Entry** | `AggregatorService.aggregate(records)` | [`aggregator_service.py`](./aggregator_service.py) | Main entry point to convert a raw record batch into `List[Account]`. |
+| **Account Dictionary Entry** | `AggregatorService.build_accounts(records)` | [`aggregator_service.py`](./aggregator_service.py) | Aggregates records and returns `Dict[account_key, Account]`. |
+| **Single Record Processing** | `AggregatorService.process_record(record)` | [`aggregator_service.py`](./aggregator_service.py) | Evaluates one record returning keys, asset tuple, and signals. |
+| **JSONL Ingestion Entry** | `AggregatorService.load_accounts_from_jsonl(request)` | [`aggregator_service.py`](./aggregator_service.py) | Streams a JSONL telemetry file from disk into unified accounts. |
+| **Domain Key Resolver** | `AccountKeyResolver.resolve(record)` | [`internals/resolvers.py`](./internals/resolvers.py) | Resolves canonical target account domain keys. |
+| **Domain Utilities & Transit Filter** | `internals/domain_utils.py` | [`internals/domain_utils.py`](./internals/domain_utils.py) | Normalizes domains, filters cloud/CDN transit domains and dynamic PTRs. |
+| **Multi-Asset Buffer** | `AccountBuilder.add_record()` & `build()` | [`internals/builder.py`](./internals/builder.py) | Accumulates assets, deduplicates signals, and constructs `Account` objects. |
+| **Streaming File Reader** | `JsonlReader.read(file_path, limit)` | [`internals/repositories/reader.py`](./internals/repositories/reader.py) | Line-by-line JSON reader with error handling. |
 
 ---
 
