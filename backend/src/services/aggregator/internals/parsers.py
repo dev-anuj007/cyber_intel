@@ -1,6 +1,8 @@
 import ipaddress
 from typing import Any, Dict, Optional
 
+from src.services.aggregator.types import RecordFeatures, VulnerabilityFeatures
+
 
 class FeatureExtractor:
     def extract_features(self, record: Dict[str, Any]) -> Dict[str, Any]:
@@ -8,7 +10,7 @@ class FeatureExtractor:
         cloud = record.get("cloud") or {}
         tags = record.get("tags") or []
 
-        features = {
+        features: Dict[str, Any] = {
             "ip": self.format_ip(record.get("ip")),
             "port": record.get("port"),
             "hostname": (
@@ -31,6 +33,10 @@ class FeatureExtractor:
         vuln_features = self.extract_vulnerability_features(record.get("vulns"))
         features.update(vuln_features)
         return features
+
+    def extract_record_features(self, record: Dict[str, Any]) -> RecordFeatures:
+        feat_dict = self.extract_features(record)
+        return RecordFeatures.model_validate(feat_dict)
 
     def extract_vulnerability_features(
         self, vulns: Optional[Dict[str, Any]]
@@ -55,9 +61,9 @@ class FeatureExtractor:
                 continue
 
             if isinstance(details.get("cvss"), (int, float)):
-                cvss_scores.append(details["cvss"])
+                cvss_scores.append(float(details["cvss"]))
             if isinstance(details.get("epss"), (int, float)):
-                epss_scores.append(details["epss"])
+                epss_scores.append(float(details["epss"]))
             if details.get("kev") is True:
                 kev_count += 1
             if details.get("ransomware_campaign") not in (None, "", "Unknown"):
@@ -70,6 +76,12 @@ class FeatureExtractor:
             "kev_count": kev_count,
             "ransomware_count": ransomware_count,
         }
+
+    def extract_typed_vulnerability_features(
+        self, vulns: Optional[Dict[str, Any]]
+    ) -> VulnerabilityFeatures:
+        vuln_dict = self.extract_vulnerability_features(vulns)
+        return VulnerabilityFeatures.model_validate(vuln_dict)
 
     @staticmethod
     def format_ip(ip_val: Any) -> Optional[str]:

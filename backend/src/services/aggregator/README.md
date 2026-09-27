@@ -181,6 +181,9 @@ accounts = default_aggregator_service.aggregate(records)
 ### 4. DTO-First Contracts
 All request and response payloads use Pydantic v2 schemas (`types.py`) with `model_config = ConfigDict(extra="ignore")`.
 
+### 5. Decoupled Protocol Interfaces
+The service strictly implements [`IAggregatorService`](./protocols.py). Collaborator services (such as [`CrawlerService`](../crawler/README.md) and [`AccountsService`](../accounts/README.md)) consume aggregator functionality via abstract protocol contracts, allowing zero-cost mock injection during testing.
+
 ---
 
 ## Local Verification & Testing

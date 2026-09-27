@@ -1,7 +1,11 @@
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from src.services.accounts.types import Account, Asset, SecuritySignal
-from src.services.aggregator.types import AddRecordCommand, RecordFeatures
+from src.services.aggregator.types import (
+    AddRecordCommand,
+    AssetIdTuple,
+    RecordFeatures,
+)
 
 
 class _AccountBuffer:
@@ -27,9 +31,7 @@ class _AccountBuffer:
         self._cloud_set: Set[str] = set()
         self._signal_keys: Set[Tuple[str, str, str, str]] = set()
 
-    def add_asset(
-        self, asset_id: Optional[Tuple[Optional[str], Optional[int], Optional[str]]]
-    ) -> None:
+    def add_asset(self, asset_id: Optional[AssetIdTuple]) -> None:
         if not asset_id:
             return
         ip, port, asset_host = asset_id
@@ -109,7 +111,7 @@ class AccountBuilder:
     def add_record(
         self,
         account_key: Optional[str] = None,
-        asset_id: Optional[Tuple[Optional[str], Optional[int], Optional[str]]] = None,
+        asset_id: Optional[AssetIdTuple] = None,
         features: Optional[Union[Dict[str, Any], RecordFeatures]] = None,
         signals: Optional[List[SecuritySignal]] = None,
         command: Optional[AddRecordCommand] = None,

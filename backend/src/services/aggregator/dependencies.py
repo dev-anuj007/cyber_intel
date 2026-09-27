@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel
 
@@ -14,10 +14,12 @@ from src.services.logger.logger_service import BaseLogger, get_logger
 if TYPE_CHECKING:
     from src.services.aggregator.types import (
         AggregateRecordsQuery,
+        AssetIdTuple,
         LoadAccountsRequest,
         ProcessRecordQuery,
         RecordFeatures,
         RecordProcessingResult,
+        VulnerabilityFeatures,
     )
 
 
@@ -106,14 +108,22 @@ class _LazyAggregatorServiceProxy(IAggregatorService):
     def extract_features(self, record: Dict[str, Any]) -> Dict[str, Any]:
         return self._get_service().extract_features(record)
 
+    def extract_record_features(self, record: Dict[str, Any]) -> "RecordFeatures":
+        return self._get_service().extract_record_features(record)
+
     def extract_vulnerability_features(
         self, vulns: Optional[Dict[str, Any]]
     ) -> Dict[str, Any]:
         return self._get_service().extract_vulnerability_features(vulns)
 
+    def extract_typed_vulnerability_features(
+        self, vulns: Optional[Dict[str, Any]]
+    ) -> "VulnerabilityFeatures":
+        return self._get_service().extract_typed_vulnerability_features(vulns)
+
     def get_asset_id(
         self, features: Union["RecordFeatures", Dict[str, Any]]
-    ) -> Optional[Tuple[Optional[str], Optional[int], Optional[str]]]:
+    ) -> Optional["AssetIdTuple"]:
         return self._get_service().get_asset_id(features)
 
 

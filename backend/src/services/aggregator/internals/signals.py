@@ -1,14 +1,20 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Union
 
 from src.services.accounts.types import SecuritySignal, SignalSeverity
+from src.services.aggregator.types import RecordFeatures
 
 
 class SignalDetector:
-    def detect_signals(self, features: Dict[str, Any]) -> List[SecuritySignal]:
+    def detect_signals(
+        self, features: Union[RecordFeatures, Dict[str, Any]]
+    ) -> List[SecuritySignal]:
+        feat_dict = (
+            features.model_dump() if isinstance(features, RecordFeatures) else features
+        )
         signals: List[SecuritySignal] = []
-        signals.extend(self._detect_technology_signals(features))
-        signals.extend(self._detect_vulnerability_signals(features))
-        signals.extend(self._detect_port_signals(features))
+        signals.extend(self._detect_technology_signals(feat_dict))
+        signals.extend(self._detect_vulnerability_signals(feat_dict))
+        signals.extend(self._detect_port_signals(feat_dict))
         return signals
 
     # =========================================================================
@@ -35,7 +41,7 @@ class SignalDetector:
     ) -> List[SecuritySignal]:
         signals: List[SecuritySignal] = []
 
-        kev_count = features.get("kev_count", 0)
+        kev_count = features.get("kev_count", 0) or 0
         if kev_count > 0:
             signals.append(
                 SecuritySignal(
@@ -76,7 +82,7 @@ class SignalDetector:
                 )
             )
 
-        ransomware_count = features.get("ransomware_count", 0)
+        ransomware_count = features.get("ransomware_count", 0) or 0
         if ransomware_count > 0:
             signals.append(
                 SecuritySignal(
@@ -90,7 +96,7 @@ class SignalDetector:
                 )
             )
 
-        vulnerability_count = features.get("vulnerability_count", 0)
+        vulnerability_count = features.get("vulnerability_count", 0) or 0
         if vulnerability_count >= 5:
             signals.append(
                 SecuritySignal(

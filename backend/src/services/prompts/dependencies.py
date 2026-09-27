@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import Any, Dict, Optional
 
 from src.services.logger.logger_service import BaseLogger, get_logger
 from src.services.prompts.internals.repositories.reader import PromptReader
@@ -11,9 +11,6 @@ from src.services.prompts.protocols import (
     IPromptWriter,
 )
 from src.services.prompts.types import PromptItem
-
-if TYPE_CHECKING:
-    pass
 
 
 @dataclass

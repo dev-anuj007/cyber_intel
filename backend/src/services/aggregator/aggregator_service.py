@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel
 
@@ -11,10 +11,12 @@ from src.services.aggregator.internals.builder import AccountBuilder
 from src.services.aggregator.protocols import IAggregatorService
 from src.services.aggregator.types import (
     AggregateRecordsQuery,
+    AssetIdTuple,
     LoadAccountsRequest,
     ProcessRecordQuery,
     RecordFeatures,
     RecordProcessingResult,
+    VulnerabilityFeatures,
 )
 
 
@@ -26,6 +28,10 @@ class AggregatorService(IAggregatorService):
         self.context: AggregatorServiceDependencyContext = (
             context or get_aggregator_dependency_context()
         )
+
+    # -------------------------------------------------------------------------
+    # Public API Methods
+    # -------------------------------------------------------------------------
 
     def aggregate(
         self, records: Union[List[Dict[str, Any]], AggregateRecordsQuery]
@@ -63,7 +69,9 @@ class AggregatorService(IAggregatorService):
             return builder.build()
 
     def load_accounts_from_jsonl(
-        self, request: Union[LoadAccountsRequest, str], limit: Optional[int] = None
+        self,
+        request: Union[LoadAccountsRequest, str],
+        limit: Optional[int] = None,
     ) -> Dict[str, Account]:
         if isinstance(request, LoadAccountsRequest):
             jsonl_path = request.jsonl_path
@@ -106,23 +114,29 @@ class AggregatorService(IAggregatorService):
     def detect_signals(
         self, features: Union[RecordFeatures, Dict[str, Any]]
     ) -> List[SecuritySignal]:
-        if isinstance(features, RecordFeatures):
-            feature_dict = features.model_dump()
-        else:
-            feature_dict = features
-        return self.context.signal_detector.detect_signals(feature_dict)
+        return self.context.signal_detector.detect_signals(features)
 
     def extract_features(self, record: Dict[str, Any]) -> Dict[str, Any]:
         return self.context.feature_extractor.extract_features(record)
+
+    def extract_record_features(self, record: Dict[str, Any]) -> RecordFeatures:
+        return self.context.feature_extractor.extract_record_features(record)
 
     def extract_vulnerability_features(
         self, vulns: Optional[Dict[str, Any]]
     ) -> Dict[str, Any]:
         return self.context.feature_extractor.extract_vulnerability_features(vulns)
 
+    def extract_typed_vulnerability_features(
+        self, vulns: Optional[Dict[str, Any]]
+    ) -> VulnerabilityFeatures:
+        return self.context.feature_extractor.extract_typed_vulnerability_features(
+            vulns
+        )
+
     def get_asset_id(
         self, features: Union[RecordFeatures, Dict[str, Any]]
-    ) -> Optional[Tuple[Optional[str], Optional[int], Optional[str]]]:
+    ) -> Optional[AssetIdTuple]:
         if isinstance(features, RecordFeatures):
             ip = features.ip
             port = features.port

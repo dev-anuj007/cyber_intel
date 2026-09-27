@@ -129,6 +129,24 @@ def test_aggregator_features_and_signals(aggregator_service):
     assert result_dto.asset_id == ("192.168.1.1", 8443, "portal.acme.com")
     assert len(result_dto.signals) >= 1
 
+    # Test typed feature extraction helpers
+    typed_features = aggregator_service.extract_record_features(raw_record)
+    assert isinstance(typed_features, RecordFeatures)
+    assert typed_features.ip == "192.168.1.1"
+    assert typed_features.port == 8443
+    assert typed_features.max_cvss == 9.8
+
+    typed_vuln = aggregator_service.extract_typed_vulnerability_features(
+        raw_record.get("vulns")
+    )
+    assert typed_vuln.kev_count == 1
+    assert typed_vuln.ransomware_count == 1
+    assert typed_vuln.max_cvss == 9.8
+
+    # Test detect_signals with RecordFeatures instance
+    signals_from_dto = aggregator_service.detect_signals(typed_features)
+    assert len(signals_from_dto) == len(signals)
+
 
 def test_aggregator_aggregate_records(aggregator_service):
     records = [

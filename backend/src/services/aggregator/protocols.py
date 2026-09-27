@@ -7,7 +7,6 @@ from typing import (
     List,
     Optional,
     Protocol,
-    Tuple,
     Union,
     runtime_checkable,
 )
@@ -19,10 +18,12 @@ from src.services.accounts.types import Account, SecuritySignal
 if TYPE_CHECKING:
     from src.services.aggregator.types import (
         AggregateRecordsQuery,
+        AssetIdTuple,
         LoadAccountsRequest,
         ProcessRecordQuery,
         RecordFeatures,
         RecordProcessingResult,
+        VulnerabilityFeatures,
     )
 
 
@@ -35,7 +36,9 @@ class IAggregatorService(Protocol):
     def build_accounts(self, records: List[Dict[str, Any]]) -> Dict[str, Account]: ...
 
     def load_accounts_from_jsonl(
-        self, request: Union[LoadAccountsRequest, str], limit: Optional[int] = None
+        self,
+        request: Union[LoadAccountsRequest, str],
+        limit: Optional[int] = None,
     ) -> Dict[str, Account]: ...
 
     def process_record(
@@ -52,10 +55,16 @@ class IAggregatorService(Protocol):
 
     def extract_features(self, record: Dict[str, Any]) -> Dict[str, Any]: ...
 
+    def extract_record_features(self, record: Dict[str, Any]) -> RecordFeatures: ...
+
     def extract_vulnerability_features(
         self, vulns: Optional[Dict[str, Any]]
     ) -> Dict[str, Any]: ...
 
+    def extract_typed_vulnerability_features(
+        self, vulns: Optional[Dict[str, Any]]
+    ) -> VulnerabilityFeatures: ...
+
     def get_asset_id(
         self, features: Union[RecordFeatures, Dict[str, Any]]
-    ) -> Optional[Tuple[Optional[str], Optional[int], Optional[str]]]: ...
+    ) -> Optional[AssetIdTuple]: ...

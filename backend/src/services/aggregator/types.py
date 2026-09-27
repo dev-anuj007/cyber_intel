@@ -4,6 +4,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src.services.accounts.types import Account, SecuritySignal
 
+AssetIdTuple = Tuple[Optional[str], Optional[int], Optional[str]]
+
 
 class VulnerabilityFeatures(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -48,14 +50,14 @@ class RecordProcessingResult(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     account_keys: List[str] = Field(default_factory=list)
-    asset_id: Optional[Tuple[Optional[str], Optional[int], Optional[str]]] = None
+    asset_id: Optional[AssetIdTuple] = None
     signals: List[SecuritySignal] = Field(default_factory=list)
 
     def to_tuple(
         self,
     ) -> Tuple[
         List[str],
-        Optional[Tuple[Optional[str], Optional[int], Optional[str]]],
+        Optional[AssetIdTuple],
         List[SecuritySignal],
     ]:
         return (self.account_keys, self.asset_id, self.signals)
@@ -65,7 +67,7 @@ class AddRecordCommand(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     account_key: str
-    asset_id: Optional[Tuple[Optional[str], Optional[int], Optional[str]]] = None
+    asset_id: Optional[AssetIdTuple] = None
     features: Union[RecordFeatures, Dict[str, Any]] = Field(default_factory=dict)
     signals: List[SecuritySignal] = Field(default_factory=list)
 
