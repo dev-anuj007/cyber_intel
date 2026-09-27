@@ -23,6 +23,53 @@ def _get_session(conn: Any) -> Session:
 
 
 class AccountWriter(IAccountWriter):
+    def insert_account(self, conn: Any, account: Account, priority_tier: str) -> int:
+        with _get_session(conn) as session:
+            account_id = self._upsert_account_record(session, account, priority_tier)
+            self._clear_entities_in_session(session, account_id)
+            self._insert_account_child_entities(session, account_id, account)
+            session.commit()
+            return account_id
+
+    def delete_account(self, conn: Any, account_key: str) -> bool:
+        with _get_session(conn) as session:
+            acc = session.exec(
+                select(AccountTable).where(
+                    (col(AccountTable.account_key) == account_key)
+                    | (
+                        col(AccountTable.account_key)
+                        == account_key.replace("domain:", "")
+                    )
+                    | (col(AccountTable.account_key) == f"domain:{account_key}")
+                )
+            ).first()
+            if acc:
+                if acc.id is not None:
+                    self._clear_entities_in_session(session, acc.id)
+                    session.exec(
+                        delete(AccountTable).where(col(AccountTable.id) == acc.id)
+                    )
+                session.commit()
+                return True
+            return False
+
+    def clear_accounts(self, conn: Any) -> None:
+        with _get_session(conn) as session:
+            session.exec(delete(SignalTable))
+            session.exec(delete(CloudProviderTable))
+            session.exec(delete(ProductTable))
+            session.exec(delete(PortTable))
+            session.exec(delete(HostnameTable))
+            session.exec(delete(IpTable))
+            session.exec(delete(AssetTable))
+            session.exec(delete(DomainTable))
+            session.exec(delete(AccountTable))
+            session.commit()
+
+    # =========================================================================
+    # Private helper methods
+    # =========================================================================
+
     def _clear_entities_in_session(self, session: Session, account_id: int) -> None:
         session.exec(
             delete(SignalTable).where(col(SignalTable.account_id) == account_id)
@@ -136,70 +183,3 @@ class AccountWriter(IAccountWriter):
                             evidence=s.evidence,
                         )
                     )
-
-    def insert_account(self, conn: Any, account: Account, priority_tier: str) -> int:
-        with _get_session(conn) as session:
-            account_id = self._upsert_account_record(session, account, priority_tier)
-            self._clear_entities_in_session(session, account_id)
-            self._insert_account_child_entities(session, account_id, account)
-            session.commit()
-            return account_id
-
-    def clear_account_entities_by_id(self, conn: Any, account_id: int) -> None:
-        with _get_session(conn) as session:
-            self._clear_entities_in_session(session, account_id)
-            session.commit()
-
-    def update_priority_tier(self, conn: Any, account_key: str, tier: str) -> bool:
-        with _get_session(conn) as session:
-            acc = session.exec(
-                select(AccountTable).where(
-                    (col(AccountTable.account_key) == account_key)
-                    | (
-                        col(AccountTable.account_key)
-                        == account_key.replace("domain:", "")
-                    )
-                    | (col(AccountTable.account_key) == f"domain:{account_key}")
-                )
-            ).first()
-            if acc:
-                acc.priority_tier = tier
-                session.add(acc)
-                session.commit()
-                return True
-            return False
-
-    def delete_account(self, conn: Any, account_key: str) -> bool:
-        with _get_session(conn) as session:
-            acc = session.exec(
-                select(AccountTable).where(
-                    (col(AccountTable.account_key) == account_key)
-                    | (
-                        col(AccountTable.account_key)
-                        == account_key.replace("domain:", "")
-                    )
-                    | (col(AccountTable.account_key) == f"domain:{account_key}")
-                )
-            ).first()
-            if acc:
-                if acc.id is not None:
-                    self._clear_entities_in_session(session, acc.id)
-                    session.exec(
-                        delete(AccountTable).where(col(AccountTable.id) == acc.id)
-                    )
-                session.commit()
-                return True
-            return False
-
-    def clear_accounts(self, conn: Any) -> None:
-        with _get_session(conn) as session:
-            session.exec(delete(SignalTable))
-            session.exec(delete(CloudProviderTable))
-            session.exec(delete(ProductTable))
-            session.exec(delete(PortTable))
-            session.exec(delete(HostnameTable))
-            session.exec(delete(IpTable))
-            session.exec(delete(AssetTable))
-            session.exec(delete(DomainTable))
-            session.exec(delete(AccountTable))
-            session.commit()

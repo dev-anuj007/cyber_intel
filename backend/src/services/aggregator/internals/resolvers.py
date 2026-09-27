@@ -9,20 +9,9 @@ from src.services.aggregator.internals.domain_utils import (
 
 
 class AccountKeyResolver:
-    def filter_valid_domains(self, raw_domains: List[Any]) -> List[str]:
-        valid_domains = []
-        for domain in raw_domains:
-            if not isinstance(domain, str):
-                continue
-            normalized = normalize_domain(domain)
-            if is_infrastructure_transit_domain(normalized):
-                continue
-            valid_domains.append(normalized)
-        return valid_domains
-
     def resolve(self, record: dict) -> List[str]:
         raw_domains = record.get("domains") or []
-        valid_domains = self.filter_valid_domains(raw_domains)
+        valid_domains = self._filter_valid_domains(raw_domains)
         if not valid_domains:
             return []
 
@@ -48,3 +37,22 @@ class AccountKeyResolver:
             return []
 
         return sorted(list(set(f"domain:{d}" for d in valid_domains)))
+
+    def filter_valid_domains(self, raw_domains: List[Any]) -> List[str]:
+        """Public alias for backward compatibility."""
+        return self._filter_valid_domains(raw_domains)
+
+    # =========================================================================
+    # Internal / Helper Methods
+    # =========================================================================
+
+    def _filter_valid_domains(self, raw_domains: List[Any]) -> List[str]:
+        valid_domains = []
+        for domain in raw_domains:
+            if not isinstance(domain, str):
+                continue
+            normalized = normalize_domain(domain)
+            if is_infrastructure_transit_domain(normalized):
+                continue
+            valid_domains.append(normalized)
+        return valid_domains

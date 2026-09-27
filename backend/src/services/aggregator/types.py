@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional, Protocol, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -38,12 +38,27 @@ class RecordFeatures(BaseModel):
     ransomware_count: int = 0
 
 
+class ProcessRecordQuery(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    record: Dict[str, Any] = Field(default_factory=dict)
+
+
 class RecordProcessingResult(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     account_keys: List[str] = Field(default_factory=list)
     asset_id: Optional[Tuple[Optional[str], Optional[int], Optional[str]]] = None
     signals: List[SecuritySignal] = Field(default_factory=list)
+
+    def to_tuple(
+        self,
+    ) -> Tuple[
+        List[str],
+        Optional[Tuple[Optional[str], Optional[int], Optional[str]]],
+        List[SecuritySignal],
+    ]:
+        return (self.account_keys, self.asset_id, self.signals)
 
 
 class AddRecordCommand(BaseModel):
@@ -55,12 +70,21 @@ class AddRecordCommand(BaseModel):
     signals: List[SecuritySignal] = Field(default_factory=list)
 
 
+class AggregateRecordsQuery(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    records: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class AggregatedAccountsResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    accounts: List[Account] = Field(default_factory=list)
+    total_count: int = 0
+
+
 class LoadAccountsRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     jsonl_path: str
     limit: Optional[int] = None
-
-
-from src.services.aggregator.protocols import IAggregatorService
-

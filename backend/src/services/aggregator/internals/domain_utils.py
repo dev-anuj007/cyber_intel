@@ -29,7 +29,8 @@ def is_dynamic_ip_ptr(hostname: str) -> bool:
     if re.search(r"\b\d{1,3}[-\.]\d{1,3}[-\.]\d{1,3}[-\.]\d{1,3}\b", h):
         return True
     if re.match(
-        r"^(ip|node|host|cpe|static|dynamic|pool|dialup|cust|broadband|dsl|fiber|vps|server|ec2|vm)[0-9\-_]", h
+        r"^(ip|node|host|cpe|static|dynamic|pool|dialup|cust|broadband|dsl|fiber|vps|server|ec2|vm)[0-9\-_]",
+        h,
     ):
         return True
     return False

@@ -26,7 +26,7 @@ from src.services.accounts.types import (
 )
 from src.services.database.database_service import DatabaseService
 from src.services.scorer.internals.repositories.writer import ScoreWriter
-from src.services.scorer.types import AccountScore
+from src.services.scorer.types import AccountScore, PriorityTier as ScorerPriorityTier
 
 
 @pytest.fixture
@@ -162,9 +162,6 @@ def test_reader_writer_methods(test_db, sample_account):
         acc_id = writer.insert_account(conn, sample_account, "tier_1_critical")
         assert acc_id is not None
 
-        # Update priority tier
-        writer.update_priority_tier(conn, "domain:acme.corp", "tier_2_high")
-
         # Load batch dict
         batch_dict = reader.load_accounts_batch(
             conn, ["domain:acme.corp"], as_dict=True
@@ -197,9 +194,6 @@ def test_reader_writer_methods(test_db, sample_account):
         # Critical signals
         crit_keys, crit_cnt = reader.get_accounts_with_critical_signals(conn)
         assert isinstance(crit_keys, list)
-
-        # Clear child entities directly
-        writer.clear_account_entities_by_id(conn, acc_id)
 
         # Delete
         assert writer.delete_account(conn, "domain:acme.corp") is True
@@ -345,7 +339,7 @@ def test_account_multi_version_sync_and_resolution(test_db):
                 account_key="domain:testcorp.com:v2",
                 account=v2_account,
                 score=92,
-                priority_tier=PriorityTier.TIER_1_CRITICAL,
+                priority_tier=ScorerPriorityTier.TIER_1_CRITICAL,
                 score_rationale="Critical vulnerability detected in v2",
                 key_risks=["CVE-2024-1234"],
                 model_version="gemini-3.1-flash-lite",

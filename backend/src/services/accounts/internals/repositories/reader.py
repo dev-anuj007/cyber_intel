@@ -69,6 +69,301 @@ def _extract_version_tag(account_key: str) -> str:
 
 
 class AccountReader(IAccountReader):
+    def load_account(
+        self, conn: Any, account_key: str, version: Optional[str] = None
+    ) -> Optional[Account]:
+        base_dom = _extract_base_domain(account_key)
+        all_versions = self.get_account_versions(conn, account_key)
+        target_key = self._resolve_target_account_key(
+            account_key, version, all_versions
+        )
+
+        with _get_session(conn) as session:
+            acc_record = self._fetch_account_record(session, target_key)
+            if not acc_record:
+                return None
+
+            active_version = _extract_version_tag(acc_record.account_key)
+            score_row = self._fetch_latest_score_for_account(
+                session, acc_record.account_key, base_dom, active_version
+            )
+            return self._build_account_from_record(acc_record, all_versions, score_row)
+
+    def get_account_versions(
+        self, conn: Any, account_key: str
+    ) -> List[AccountVersionSummary]:
+        base_dom = _extract_base_domain(account_key)
+        if not base_dom:
+            return []
+
+        raw = _extract_raw_conn(conn)
+        cursor = raw.cursor()
+        try:
+            rows = self._query_version_rows(cursor, base_dom)
+            if not rows:
+                return []
+
+            acc_ids = [r[0] for r in rows]
+            acc_keys = [r[1] for r in rows]
+
+            assets_map, signals_map = self._fetch_version_batch_counts(cursor, acc_ids)
+            scores_map = self._fetch_version_scores_map(cursor, acc_keys)
+
+            return self._build_sorted_version_summaries(
+                rows, base_dom, assets_map, signals_map, scores_map
+            )
+        finally:
+            try:
+                cursor.close()
+            except Exception:
+                pass
+
+    def load_accounts_batch(
+        self,
+        conn: Any,
+        account_keys: List[str],
+        as_dict: bool = False,
+        max_preview_items: int = 25,
+    ) -> List[Any]:
+        if not account_keys:
+            return []
+
+        with _get_session(conn) as session:
+            statement = (
+                select(AccountTable)
+                .where(col(AccountTable.account_key).in_(account_keys))
+                .options(
+                    selectinload(AccountTable.domains),  # type: ignore
+                    selectinload(AccountTable.assets),  # type: ignore
+                    selectinload(AccountTable.ips),  # type: ignore
+                    selectinload(AccountTable.hostnames),  # type: ignore
+                    selectinload(AccountTable.ports),  # type: ignore
+                    selectinload(AccountTable.products),  # type: ignore
+                    selectinload(AccountTable.cloud_providers),  # type: ignore
+                    selectinload(AccountTable.signals),  # type: ignore
+                )
+            )
+            records = session.exec(statement).all()
+            if not records:
+                return []
+
+            accounts_by_key = {
+                acc.account_key: self._convert_record_to_batch_item(
+                    acc, as_dict, max_preview_items
+                )
+                for acc in records
+            }
+            return [accounts_by_key[k] for k in account_keys if k in accounts_by_key]
+
+    def load_accounts_summary_batch(
+        self,
+        conn: Any,
+        account_keys: List[str],
+    ) -> List[Dict[str, Any]]:
+        if not account_keys:
+            return []
+
+        raw = _extract_raw_conn(conn)
+        cursor = raw.cursor()
+        try:
+            placeholders = _get_ph(cursor, account_keys)
+            acc_rows = cursor.execute(
+                f"SELECT id, account_key, priority_tier FROM accounts WHERE account_key IN ({placeholders})",
+                account_keys,
+            ).fetchall()
+
+            if not acc_rows:
+                return []
+
+            acc_id_map = {row[0]: row[1] for row in acc_rows}
+            acc_tier_map = {row[1]: row[2] for row in acc_rows}
+            acc_ids = list(acc_id_map.keys())
+            base_doms = list(
+                set(
+                    _extract_base_domain(k)
+                    for k in account_keys
+                    if _extract_base_domain(k)
+                )
+            )
+
+            domains_by_id = self._batch_load_domains(cursor, acc_ids)
+            assets_count_by_id = self._batch_load_asset_counts(cursor, acc_ids)
+            hostnames_count_by_id = self._batch_load_hostname_counts(cursor, acc_ids)
+            providers_by_id = self._batch_load_cloud_providers(cursor, acc_ids)
+            signals_by_id = self._batch_load_signal_counts(cursor, acc_ids)
+            scores_map = self._batch_load_scores_map(cursor, account_keys, base_doms)
+            versions_by_base_domain = self._batch_load_domain_versions(
+                cursor, base_doms, scores_map
+            )
+
+            return self._assemble_account_summaries(
+                account_keys=account_keys,
+                acc_id_map=acc_id_map,
+                acc_tier_map=acc_tier_map,
+                domains_by_id=domains_by_id,
+                assets_count_by_id=assets_count_by_id,
+                hostnames_count_by_id=hostnames_count_by_id,
+                providers_by_id=providers_by_id,
+                signals_by_id=signals_by_id,
+                scores_map=scores_map,
+                versions_by_base_domain=versions_by_base_domain,
+            )
+        finally:
+            try:
+                cursor.close()
+            except Exception:
+                pass
+
+    def search_accounts_by_domain(
+        self, conn: Any, domain_query: str, limit: int = 10
+    ) -> List[str]:
+        cleaned_query = domain_query.strip()
+        if not cleaned_query:
+            return []
+        with _get_session(conn) as session:
+            statement = (
+                select(
+                    AccountTable.id, AccountTable.account_key, AccountTable.signal_count
+                )
+                .outerjoin(
+                    DomainTable, col(AccountTable.id) == col(DomainTable.account_id)
+                )
+                .where(
+                    or_(
+                        col(DomainTable.domain).contains(cleaned_query),
+                        col(AccountTable.account_key).contains(cleaned_query),
+                    )
+                )
+                .distinct()
+                .order_by(
+                    col(AccountTable.signal_count).desc(), col(AccountTable.id).desc()
+                )
+                .limit(max(limit * 20, 50))
+            )
+            rows = session.exec(statement).all()
+            return self._deduplicate_latest_domains(rows, limit)
+
+    def get_accounts_by_signal(
+        self, conn: Any, signal_name: str, skip: int = 0, limit: int = 20
+    ) -> Tuple[List[str], int]:
+        with _get_session(conn) as session:
+            count_stmt = select(
+                func.count(func.distinct(col(SignalTable.account_id)))
+            ).where(SignalTable.name == signal_name)
+            total = session.exec(count_stmt).one() or 0
+
+            statement = (
+                select(AccountTable.account_key)
+                .join(SignalTable, col(AccountTable.id) == col(SignalTable.account_id))
+                .where(SignalTable.name == signal_name)
+                .distinct()
+                .order_by(
+                    col(AccountTable.signal_count).desc(), col(AccountTable.id).asc()
+                )
+                .offset(skip)
+                .limit(limit)
+            )
+            account_keys = list(session.exec(statement).all())
+            return account_keys, total
+
+    def get_accounts_with_critical_signals(
+        self, conn: Any, skip: int = 0, limit: int = 20, total: Optional[int] = None
+    ) -> Tuple[List[str], int]:
+        if total is None:
+            stats = self.get_summary_stats(conn)
+            total = stats["accounts_with_critical_signals"]
+
+        with _get_session(conn) as session:
+            statement = (
+                select(AccountTable.account_key)
+                .where(AccountTable.priority_tier == "tier_1_critical")
+                .order_by(
+                    col(AccountTable.signal_count).desc(), col(AccountTable.id).asc()
+                )
+                .offset(skip)
+                .limit(limit)
+            )
+            keys = list(session.exec(statement).all())
+            return keys, total
+
+    def get_accounts_by_priority_tier(
+        self,
+        conn: Any,
+        priority_tier: str,
+        skip: int = 0,
+        limit: int = 20,
+        total: Optional[int] = None,
+    ) -> Tuple[List[str], int]:
+        if total is None:
+            stats = self.get_summary_stats(conn)
+            valid_tiers = {
+                "tier_1_critical": stats["critical_count"],
+                "tier_2_high": stats["high_count"],
+                "tier_3_medium": stats["medium_count"],
+                "tier_4_low": stats["low_count"],
+            }
+            if priority_tier in valid_tiers:
+                total = valid_tiers[priority_tier]
+            else:
+                return self.get_all_accounts(conn, skip=skip, limit=limit)
+
+        with _get_session(conn) as session:
+            statement = (
+                select(AccountTable.account_key)
+                .where(AccountTable.priority_tier == priority_tier)
+                .order_by(
+                    col(AccountTable.signal_count).desc(), col(AccountTable.id).asc()
+                )
+                .offset(skip)
+                .limit(limit)
+            )
+            keys = list(session.exec(statement).all())
+            return keys, total
+
+    def get_all_accounts(
+        self, conn: Any, skip: int = 0, limit: int = 20, total: Optional[int] = None
+    ) -> Tuple[List[str], int]:
+        if total is None:
+            stats = self.get_summary_stats(conn)
+            total = stats["total_accounts"]
+        with _get_session(conn) as session:
+            statement = (
+                select(AccountTable.account_key)
+                .order_by(
+                    col(AccountTable.signal_count).desc(), col(AccountTable.id).asc()
+                )
+                .offset(skip)
+                .limit(limit)
+            )
+            keys = list(session.exec(statement).all())
+            return keys, total
+
+    def get_summary_stats(self, conn: Any) -> Dict[str, int]:
+        with _get_session(conn) as session:
+            statement = select(
+                AccountTable.priority_tier, func.count(col(AccountTable.id))
+            ).group_by(AccountTable.priority_tier)
+            tier_counts = dict(session.exec(statement).all())
+
+            critical_count = tier_counts.get("tier_1_critical", 0)
+            high_count = tier_counts.get("tier_2_high", 0)
+            medium_count = tier_counts.get("tier_3_medium", 0)
+            low_count = tier_counts.get("tier_4_low", 0)
+            total_accounts = critical_count + high_count + medium_count + low_count
+
+            return {
+                "total_accounts": total_accounts,
+                "critical_count": critical_count,
+                "high_count": high_count,
+                "medium_count": medium_count,
+                "low_count": low_count,
+                "accounts_with_critical_signals": critical_count,
+            }
+
+    # =========================================================================
+    # Private helper methods
+    # =========================================================================
+
     def _query_version_rows(self, cursor: Any, base_dom: str) -> List[Tuple[Any, ...]]:
         cand_keys = [f"domain:{base_dom}", base_dom]
         for i in range(1, 15):
@@ -154,35 +449,6 @@ class AccountReader(IAccountReader):
 
         versions.sort(key=_ver_num, reverse=True)
         return versions
-
-    def get_account_versions(
-        self, conn: Any, account_key: str
-    ) -> List[AccountVersionSummary]:
-        base_dom = _extract_base_domain(account_key)
-        if not base_dom:
-            return []
-
-        raw = _extract_raw_conn(conn)
-        cursor = raw.cursor()
-        try:
-            rows = self._query_version_rows(cursor, base_dom)
-            if not rows:
-                return []
-
-            acc_ids = [r[0] for r in rows]
-            acc_keys = [r[1] for r in rows]
-
-            assets_map, signals_map = self._fetch_version_batch_counts(cursor, acc_ids)
-            scores_map = self._fetch_version_scores_map(cursor, acc_keys)
-
-            return self._build_sorted_version_summaries(
-                rows, base_dom, assets_map, signals_map, scores_map
-            )
-        finally:
-            try:
-                cursor.close()
-            except Exception:
-                pass
 
     def _resolve_target_account_key(
         self,
@@ -415,26 +681,6 @@ class AccountReader(IAccountReader):
             available_versions=all_versions,
         )
 
-    def load_account(
-        self, conn: Any, account_key: str, version: Optional[str] = None
-    ) -> Optional[Account]:
-        base_dom = _extract_base_domain(account_key)
-        all_versions = self.get_account_versions(conn, account_key)
-        target_key = self._resolve_target_account_key(
-            account_key, version, all_versions
-        )
-
-        with _get_session(conn) as session:
-            acc_record = self._fetch_account_record(session, target_key)
-            if not acc_record:
-                return None
-
-            active_version = _extract_version_tag(acc_record.account_key)
-            score_row = self._fetch_latest_score_for_account(
-                session, acc_record.account_key, base_dom, active_version
-            )
-            return self._build_account_from_record(acc_record, all_versions, score_row)
-
     def _convert_record_to_batch_item(
         self, acc: AccountTable, as_dict: bool, max_preview_items: int
     ) -> Union[Dict[str, Any], Account]:
@@ -506,43 +752,6 @@ class AccountReader(IAccountReader):
                 cloud_providers=cloud_providers,
                 signals=signals,
             )
-
-    def load_accounts_batch(
-        self,
-        conn: Any,
-        account_keys: List[str],
-        as_dict: bool = False,
-        max_preview_items: int = 25,
-    ) -> List[Any]:
-        if not account_keys:
-            return []
-
-        with _get_session(conn) as session:
-            statement = (
-                select(AccountTable)
-                .where(col(AccountTable.account_key).in_(account_keys))
-                .options(
-                    selectinload(AccountTable.domains),  # type: ignore
-                    selectinload(AccountTable.assets),  # type: ignore
-                    selectinload(AccountTable.ips),  # type: ignore
-                    selectinload(AccountTable.hostnames),  # type: ignore
-                    selectinload(AccountTable.ports),  # type: ignore
-                    selectinload(AccountTable.products),  # type: ignore
-                    selectinload(AccountTable.cloud_providers),  # type: ignore
-                    selectinload(AccountTable.signals),  # type: ignore
-                )
-            )
-            records = session.exec(statement).all()
-            if not records:
-                return []
-
-            accounts_by_key = {
-                acc.account_key: self._convert_record_to_batch_item(
-                    acc, as_dict, max_preview_items
-                )
-                for acc in records
-            }
-            return [accounts_by_key[k] for k in account_keys if k in accounts_by_key]
 
     def _batch_load_domains(
         self, cursor: Any, acc_ids: List[int]
@@ -767,65 +976,6 @@ class AccountReader(IAccountReader):
 
         return result
 
-    def load_accounts_summary_batch(
-        self,
-        conn: Any,
-        account_keys: List[str],
-    ) -> List[Dict[str, Any]]:
-        if not account_keys:
-            return []
-
-        raw = _extract_raw_conn(conn)
-        cursor = raw.cursor()
-        try:
-            placeholders = _get_ph(cursor, account_keys)
-            acc_rows = cursor.execute(
-                f"SELECT id, account_key, priority_tier FROM accounts WHERE account_key IN ({placeholders})",
-                account_keys,
-            ).fetchall()
-
-            if not acc_rows:
-                return []
-
-            acc_id_map = {row[0]: row[1] for row in acc_rows}
-            acc_tier_map = {row[1]: row[2] for row in acc_rows}
-            acc_ids = list(acc_id_map.keys())
-            base_doms = list(
-                set(
-                    _extract_base_domain(k)
-                    for k in account_keys
-                    if _extract_base_domain(k)
-                )
-            )
-
-            domains_by_id = self._batch_load_domains(cursor, acc_ids)
-            assets_count_by_id = self._batch_load_asset_counts(cursor, acc_ids)
-            hostnames_count_by_id = self._batch_load_hostname_counts(cursor, acc_ids)
-            providers_by_id = self._batch_load_cloud_providers(cursor, acc_ids)
-            signals_by_id = self._batch_load_signal_counts(cursor, acc_ids)
-            scores_map = self._batch_load_scores_map(cursor, account_keys, base_doms)
-            versions_by_base_domain = self._batch_load_domain_versions(
-                cursor, base_doms, scores_map
-            )
-
-            return self._assemble_account_summaries(
-                account_keys=account_keys,
-                acc_id_map=acc_id_map,
-                acc_tier_map=acc_tier_map,
-                domains_by_id=domains_by_id,
-                assets_count_by_id=assets_count_by_id,
-                hostnames_count_by_id=hostnames_count_by_id,
-                providers_by_id=providers_by_id,
-                signals_by_id=signals_by_id,
-                scores_map=scores_map,
-                versions_by_base_domain=versions_by_base_domain,
-            )
-        finally:
-            try:
-                cursor.close()
-            except Exception:
-                pass
-
     def _deduplicate_latest_domains(self, rows: Any, limit: int) -> List[str]:
         domain_map: Dict[str, Tuple[int, int, str]] = {}
         for row in rows:
@@ -845,149 +995,3 @@ class AccountReader(IAccountReader):
                     domain_map[base_dom] = (ver_num, acc_id_val, acc_key)
 
         return [val[2] for val in domain_map.values()][:limit]
-
-    def search_accounts_by_domain(
-        self, conn: Any, domain_query: str, limit: int = 10
-    ) -> List[str]:
-        cleaned_query = domain_query.strip()
-        if not cleaned_query:
-            return []
-        with _get_session(conn) as session:
-            statement = (
-                select(
-                    AccountTable.id, AccountTable.account_key, AccountTable.signal_count
-                )
-                .outerjoin(
-                    DomainTable, col(AccountTable.id) == col(DomainTable.account_id)
-                )
-                .where(
-                    or_(
-                        col(DomainTable.domain).contains(cleaned_query),
-                        col(AccountTable.account_key).contains(cleaned_query),
-                    )
-                )
-                .distinct()
-                .order_by(
-                    col(AccountTable.signal_count).desc(), col(AccountTable.id).desc()
-                )
-                .limit(max(limit * 20, 50))
-            )
-            rows = session.exec(statement).all()
-            return self._deduplicate_latest_domains(rows, limit)
-
-    def get_accounts_by_signal(
-        self, conn: Any, signal_name: str, skip: int = 0, limit: int = 20
-    ) -> Tuple[List[str], int]:
-        with _get_session(conn) as session:
-            count_stmt = select(
-                func.count(func.distinct(col(SignalTable.account_id)))
-            ).where(SignalTable.name == signal_name)
-            total = session.exec(count_stmt).one() or 0
-
-            statement = (
-                select(AccountTable.account_key)
-                .join(SignalTable, col(AccountTable.id) == col(SignalTable.account_id))
-                .where(SignalTable.name == signal_name)
-                .distinct()
-                .order_by(
-                    col(AccountTable.signal_count).desc(), col(AccountTable.id).asc()
-                )
-                .offset(skip)
-                .limit(limit)
-            )
-            account_keys = list(session.exec(statement).all())
-            return account_keys, total
-
-    def get_accounts_with_critical_signals(
-        self, conn: Any, skip: int = 0, limit: int = 20, total: Optional[int] = None
-    ) -> Tuple[List[str], int]:
-        if total is None:
-            stats = self.get_summary_stats(conn)
-            total = stats["accounts_with_critical_signals"]
-
-        with _get_session(conn) as session:
-            statement = (
-                select(AccountTable.account_key)
-                .where(AccountTable.priority_tier == "tier_1_critical")
-                .order_by(
-                    col(AccountTable.signal_count).desc(), col(AccountTable.id).asc()
-                )
-                .offset(skip)
-                .limit(limit)
-            )
-            keys = list(session.exec(statement).all())
-            return keys, total
-
-    def get_all_accounts(
-        self, conn: Any, skip: int = 0, limit: int = 20, total: Optional[int] = None
-    ) -> Tuple[List[str], int]:
-        if total is None:
-            stats = self.get_summary_stats(conn)
-            total = stats["total_accounts"]
-        with _get_session(conn) as session:
-            statement = (
-                select(AccountTable.account_key)
-                .order_by(
-                    col(AccountTable.signal_count).desc(), col(AccountTable.id).asc()
-                )
-                .offset(skip)
-                .limit(limit)
-            )
-            keys = list(session.exec(statement).all())
-            return keys, total
-
-    def get_accounts_by_priority_tier(
-        self,
-        conn: Any,
-        priority_tier: str,
-        skip: int = 0,
-        limit: int = 20,
-        total: Optional[int] = None,
-    ) -> Tuple[List[str], int]:
-        if total is None:
-            stats = self.get_summary_stats(conn)
-            valid_tiers = {
-                "tier_1_critical": stats["critical_count"],
-                "tier_2_high": stats["high_count"],
-                "tier_3_medium": stats["medium_count"],
-                "tier_4_low": stats["low_count"],
-            }
-            if priority_tier in valid_tiers:
-                total = valid_tiers[priority_tier]
-            else:
-                return self.get_all_accounts(conn, skip=skip, limit=limit)
-
-        with _get_session(conn) as session:
-            statement = (
-                select(AccountTable.account_key)
-                .where(AccountTable.priority_tier == priority_tier)
-                .order_by(
-                    col(AccountTable.signal_count).desc(), col(AccountTable.id).asc()
-                )
-                .offset(skip)
-                .limit(limit)
-            )
-            keys = list(session.exec(statement).all())
-            return keys, total
-
-    def get_summary_stats(self, conn: Any) -> Dict[str, int]:
-        with _get_session(conn) as session:
-            statement = select(
-                AccountTable.priority_tier, func.count(col(AccountTable.id))
-            ).group_by(AccountTable.priority_tier)
-            tier_counts = dict(session.exec(statement).all())
-
-            critical_count = tier_counts.get("tier_1_critical", 0)
-            high_count = tier_counts.get("tier_2_high", 0)
-            medium_count = tier_counts.get("tier_3_medium", 0)
-            low_count = tier_counts.get("tier_4_low", 0)
-            total_accounts = critical_count + high_count + medium_count + low_count
-
-            return {
-                "total_accounts": total_accounts,
-                "critical_count": critical_count,
-                "high_count": high_count,
-                "medium_count": medium_count,
-                "low_count": low_count,
-                "accounts_with_critical_signals": critical_count,
-            }

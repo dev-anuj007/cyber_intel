@@ -1,12 +1,24 @@
-from typing import List
+from typing import Any, Dict, List
 
 from src.services.accounts.types import SecuritySignal, SignalSeverity
 
 
 class SignalDetector:
-    def detect_signals(self, features: dict) -> List[SecuritySignal]:
-        signals = []
+    def detect_signals(self, features: Dict[str, Any]) -> List[SecuritySignal]:
+        signals: List[SecuritySignal] = []
+        signals.extend(self._detect_technology_signals(features))
+        signals.extend(self._detect_vulnerability_signals(features))
+        signals.extend(self._detect_port_signals(features))
+        return signals
 
+    # =========================================================================
+    # Internal / Heuristic Helper Methods
+    # =========================================================================
+
+    def _detect_technology_signals(
+        self, features: Dict[str, Any]
+    ) -> List[SecuritySignal]:
+        signals: List[SecuritySignal] = []
         if "eol-product" in (features.get("tags") or []):
             signals.append(
                 SecuritySignal(
@@ -16,6 +28,12 @@ class SignalDetector:
                     evidence="Product is tagged as end-of-life",
                 )
             )
+        return signals
+
+    def _detect_vulnerability_signals(
+        self, features: Dict[str, Any]
+    ) -> List[SecuritySignal]:
+        signals: List[SecuritySignal] = []
 
         kev_count = features.get("kev_count", 0)
         if kev_count > 0:
@@ -65,7 +83,10 @@ class SignalDetector:
                     name="ransomware_associated_vulnerability",
                     severity=SignalSeverity.CRITICAL,
                     category="vulnerability",
-                    evidence=f"{ransomware_count} vulnerability(s) associated with ransomware campaigns",
+                    evidence=(
+                        f"{ransomware_count} vulnerability(s) associated with "
+                        "ransomware campaigns"
+                    ),
                 )
             )
 
@@ -80,6 +101,10 @@ class SignalDetector:
                 )
             )
 
+        return signals
+
+    def _detect_port_signals(self, features: Dict[str, Any]) -> List[SecuritySignal]:
+        signals: List[SecuritySignal] = []
         port = features.get("port")
         if port is not None and port not in {80, 443}:
             signals.append(
@@ -90,5 +115,4 @@ class SignalDetector:
                     evidence=f"Exposed port: {port}",
                 )
             )
-
         return signals
