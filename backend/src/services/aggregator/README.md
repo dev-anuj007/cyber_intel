@@ -10,15 +10,15 @@ The service follows clean architecture and domain-driven design principles with 
 
 ```mermaid
 flowchart TD
-    Ingest["Raw Network Telemetry"] --> Svc["Aggregator Service"]
-    Svc --> Ctx["Dependency Context"]
-    Ctx --> Logger["Logger Service"]
-    Ctx --> Extractor["Feature Extractor"]
-    Ctx --> Resolver["Account Key Resolver"]
-    Ctx --> Detector["Signal Detector"]
-    Ctx --> Reader["JSONL Reader"]
-    Svc --> Builder["Account Builder & Buffer"]
-    Builder --> Output["Target Account Profiles"]
+    Ingest["Raw Network<br/>Telemetry"] --> Svc["Aggregator<br/>Service"]
+    Svc --> Ctx["Dependency<br/>Context"]
+    Ctx --> Logger["Logger<br/>Service"]
+    Ctx --> Extractor["Feature<br/>Extractor"]
+    Ctx --> Resolver["Account Key<br/>Resolver"]
+    Ctx --> Detector["Signal<br/>Detector"]
+    Ctx --> Reader["JSONL<br/>Reader"]
+    Svc --> Builder["Account Builder<br/>& Buffer"]
+    Builder --> Output["Target Account<br/>Profiles"]
 ```
 
 ### Module Breakdown
@@ -55,12 +55,12 @@ aggregator/
 
 ```mermaid
 flowchart TD
-    Raw["Raw Network Record"] --> Parse["Feature Extractor"]
-    Parse --> IP["Format IPv4 Address"]
-    Parse --> HTTP["Extract Cloud & HTTP Headers"]
-    Parse --> Vuln["Extract Vulnerability Metrics"]
-    Vuln --> Metrics["Compute CVSS, EPSS & KEV"]
-    Metrics --> Feat["Normalized Record Features"]
+    Raw["Raw Network<br/>Record"] --> Parse["Feature<br/>Extractor"]
+    Parse --> IP["Format IPv4<br/>Address"]
+    Parse --> HTTP["Extract Cloud<br/>& HTTP Headers"]
+    Parse --> Vuln["Extract Vuln<br/>Metrics"]
+    Vuln --> Metrics["Compute CVSS,<br/>EPSS & KEV"]
+    Metrics --> Feat["Normalized<br/>Record Features"]
     IP --> Feat
     HTTP --> Feat
 ```
@@ -79,15 +79,15 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Feat["Record Features"] --> SigDet["Signal Detector"]
-    SigDet --> Tech["EOL Technology Tag<br/><b>HIGH Severity</b>"]
-    SigDet --> KEV["CISA KEV Vulnerability<br/><b>CRITICAL Severity</b>"]
-    SigDet --> CVSS["CVSS Score Threshold<br/><b>CRITICAL / HIGH</b>"]
-    SigDet --> EPSS["High EPSS Probability<br/><b>HIGH Severity</b>"]
-    SigDet --> Ransom["Ransomware Campaign<br/><b>CRITICAL Severity</b>"]
-    SigDet --> VulnCount["High Vulnerability Count<br/><b>MEDIUM Severity</b>"]
-    SigDet --> Ports["Non-Standard Port<br/><b>LOW Severity</b>"]
-    Tech --> Signals["Security Signals List"]
+    Feat["Record<br/>Features"] --> SigDet["Signal<br/>Detector"]
+    SigDet --> Tech["EOL Product<br/><b>HIGH</b>"]
+    SigDet --> KEV["CISA KEV<br/><b>CRITICAL</b>"]
+    SigDet --> CVSS["CVSS Score<br/><b>CRITICAL / HIGH</b>"]
+    SigDet --> EPSS["High EPSS<br/><b>HIGH</b>"]
+    SigDet --> Ransom["Ransomware<br/><b>CRITICAL</b>"]
+    SigDet --> VulnCount["5+ Vulns<br/><b>MEDIUM</b>"]
+    SigDet --> Ports["Non-Std Port<br/><b>LOW</b>"]
+    Tech --> Signals["Security<br/>Signals List"]
     KEV --> Signals
     CVSS --> Signals
     EPSS --> Signals
@@ -111,14 +111,14 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Record["Raw Record & Hostnames"] --> Res["Account Key Resolver"]
-    Res --> Filter["Filter Transit Domains & Dynamic PTRs"]
-    Filter --> Match["Match Hostnames to Root Domains"]
-    Match --> Keys["Resolved Account Keys"]
-    Keys --> Builder["Account Builder"]
-    Builder --> Buffer["Account Buffer<br/><i>(Deduplicate Assets & Signals)</i>"]
-    Buffer --> Build["Build Account Entity"]
-    Build --> Accounts["Unified Account Targets"]
+    Record["Raw Record<br/>& Hostnames"] --> Res["Account Key<br/>Resolver"]
+    Res --> Filter["Filter Transit<br/>& PTR Domains"]
+    Filter --> Match["Match Hostnames<br/>to Root Domain"]
+    Match --> Keys["Resolved<br/>Account Keys"]
+    Keys --> Builder["Account<br/>Builder"]
+    Builder --> Buffer["Account Buffer<br/><i>(Deduplicate)</i>"]
+    Buffer --> Build["Build Account<br/>Entity"]
+    Build --> Accounts["Unified Target<br/>Accounts"]
 ```
 
 #### 🔍 Code Entry Points & Execution Trace
